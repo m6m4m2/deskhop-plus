@@ -13,7 +13,7 @@ static int feed_all(dhp_framer_t *fr, const uint8_t *buf, size_t n,
 {
     int got = 0;
     for (size_t i = 0; i < n; i++) {
-        dhp_frame_t f;
+        dhp_frame_t f = {0};
         if (dhp_framer_push(fr, buf[i], key, &f) == DHP_OK) {
             got++;
             if (last) {
@@ -38,7 +38,7 @@ static void test_roundtrip(void)
 
     dhp_framer_t fr;
     dhp_framer_init(&fr);
-    dhp_frame_t out;
+    dhp_frame_t out = {0};
     CHECK_EQ(feed_all(&fr, wire, n, KEY, &out), 1);
 
     CHECK_EQ(out.type, DHP_MSG_KBD);
@@ -70,7 +70,7 @@ static void test_byte_stuffing(void)
 
     dhp_framer_t fr;
     dhp_framer_init(&fr);
-    dhp_frame_t out;
+    dhp_frame_t out = {0};
     CHECK_EQ(feed_all(&fr, wire, n, KEY, &out), 1);
     CHECK_EQ(out.len, sizeof(payload));
     CHECK_EQ(memcmp(out.payload, payload, sizeof(payload)), 0);
@@ -157,7 +157,7 @@ static void test_forward_preserves_mac(void)
 
     dhp_framer_t fr;
     dhp_framer_init(&fr);
-    dhp_frame_t out;
+    dhp_frame_t out = {0};
     CHECK_EQ(feed_all(&fr, wire, n, KEY, &out), 1);
     CHECK_EQ(out.ttl, 3);
 
@@ -195,7 +195,7 @@ static void test_max_payload(void)
 
     dhp_framer_t fr;
     dhp_framer_init(&fr);
-    dhp_frame_t out;
+    dhp_frame_t out = {0};
     CHECK_EQ(feed_all(&fr, wire, n, KEY, &out), 1);
     CHECK_EQ(out.len, DHP_MAX_PAYLOAD);
     CHECK_EQ(memcmp(out.payload, payload, DHP_MAX_PAYLOAD), 0);
@@ -227,7 +227,7 @@ static void test_noise_then_valid(void)
     uint32_t seed = 12345;
     for (int i = 0; i < 5000; i++) {
         seed = seed * 1103515245u + 12345u;
-        dhp_frame_t junk;
+        dhp_frame_t junk = {0};
         dhp_framer_push(&fr, (uint8_t)(seed >> 16), KEY, &junk);
     }
     CHECK_EQ(feed_all(&fr, wire, n, KEY, NULL), 1);

@@ -30,7 +30,9 @@
 #include "boardlink.h"
 #include "clipboard.h"
 #include "dhp/data.h"
+#include "dhp/level.h"
 #include "dhp/link.h"
+#include "dhp/local.h"
 
 static volatile sig_atomic_t g_stop;
 static void on_signal(int s) { (void)s; g_stop = 1; }
@@ -68,7 +70,12 @@ typedef struct {
     uint8_t        *last_clip;
     size_t          last_clip_len;
     dhp_time_t      next_clip_poll;
-    dhp_addr_t      peer; /* who to send to; 0 = broadcast to the chain */
+    dhp_addr_t      peer;       /* who to send to */
+    bool            self_fixed;  /* --self given, so ignore what the board says */
+    bool            attached;
+    dhp_time_t      next_attach;
+    dhp_addr_t      board_focus;
+    uint8_t         board_level;
 } client_t;
 
 static client_t g_c;
@@ -282,6 +289,59 @@ static bool send_owned(client_t *c, uint8_t kind, const char *name,
         return false;
     }
     return true;
+}
+
+/* ---- the board's own messages -------------------------------------- */
+
+static void handle_status(client_t *c, const dhp_frame_t *f)
+{
+    dhp_local_status_t st;
+    if (!dhp_local_status_unpack(f->payload, f->len, &st)) {
+        return;
+    }
+
+    c->board_focus = st.focus;
+    c->board_level = st.level;
+
+    if (!c->attached) {
+        c->attached = true;
+        logv(c, "board %u answered: level %u, %u boards", st.self, st.level,
+             st.boards);
+    }
+
+    /* Adopt the board's chain address as our own.
+     *
+     * Guessing one is not an option: two clients that picked the same value
+     * would each treat the other's frames as their own echo and silently drop
+     * them. --self overrides this only for development against a socket, where
+     * there is no board to ask. */
+    if (!c->self_fixed && st.self != DHP_ADDR_NONE && st.self != c->self) {
+        logv(c, "adopting address %u from the board", st.self);
+        c->self = st.self;
+        c->link.self = st.self;
+    }
+}
+
+/* Announced repeatedly, not once: the board forgets a client that has gone
+ * quiet, and a client that started before its board -- or survived a board
+ * reset -- must be able to reappear without being restarted. */
+static void announce(client_t *c, dhp_time_t now)
+{
+    if (!dhp_time_after(now, c->next_attach)) {
+        return;
+    }
+    c->next_attach = now + 1000;
+
+    uint16_t caps = DHP_CAP_FILES | DHP_CAP_SHARE;
+    if (clipboard_available(&c->clip)) {
+        caps |= DHP_CAP_CLIPBOARD | DHP_CAP_IMAGES;
+    }
+
+    const dhp_local_attach_t a = {.caps = caps};
+    uint8_t buf[DHP_LOCAL_ATTACH_BYTES];
+    dhp_local_attach_pack(&a, buf);
+    dhp_link_send(&c->link, DHP_MSG_CAP, DHP_ADDR_BROADCAST, buf, sizeof(buf),
+                  now);
 }
 
 /* ---- clipboard watch ----------------------------------------------- */
@@ -515,8 +575,8 @@ static void usage(const char *a0)
             "  -d, --device PATH    board hidraw node (default /dev/deskhop0)\n"
             "  -s, --socket PATH    connect to a socket instead (development)\n"
             "  -p, --peer ADDR      board address to send to\n"
-            "  -S, --self ADDR      this board's address (the board supplies\n"
-            "                       this on real hardware; for socket dev)\n"
+            "  -S, --self ADDR      override the address the board reports\n"
+            "                       (only needed for socket development)\n"
             "  -o, --outdir DIR     where received files land\n"
             "  -c, --ctl PATH       control socket\n"
             "      --copy-cmd CMD   override the clipboard write helper\n"
@@ -562,7 +622,10 @@ int main(int argc, char **argv)
         case 'd': device = optarg; break;
         case 's': sock = optarg; break;
         case 'p': c->peer = (dhp_addr_t)strtoul(optarg, NULL, 0); break;
-        case 'S': c->self = (dhp_addr_t)strtoul(optarg, NULL, 0); break;
+        case 'S':
+            c->self = (dhp_addr_t)strtoul(optarg, NULL, 0);
+            c->self_fixed = true;
+            break;
         case 'o': snprintf(c->outdir, sizeof(c->outdir), "%s", optarg); break;
         case 'c': snprintf(c->ctl_path, sizeof(c->ctl_path), "%s", optarg); break;
         case OPT_COPY:
@@ -604,6 +667,9 @@ int main(int argc, char **argv)
      * --self exists for development against a socket, where there is no board
      * to ask. */
     if (c->self == DHP_ADDR_NONE) {
+        /* A placeholder until the board says otherwise. Nothing is sent before
+         * then, because dhp_data has nothing to send until the user copies
+         * something. */
         c->self = 0x00FF;
     }
     dhp_link_init(&c->link, c->self, on_tx, c);
@@ -649,10 +715,15 @@ int main(int argc, char **argv)
             }
             for (int i = 0; i < n; i++) {
                 dhp_frame_t f;
-                if (dhp_link_rx_byte(&c->link, DHP_PORT_UP, b[i], now, &f) ==
+                if (dhp_link_rx_byte(&c->link, DHP_PORT_UP, b[i], now, &f) !=
                     DHP_OK) {
-                    dhp_data_rx(&c->data, &f, now);
+                    continue;
                 }
+                if (f.type == DHP_MSG_CAP) {
+                    handle_status(c, &f);
+                    continue;
+                }
+                dhp_data_rx(&c->data, &f, now);
             }
         }
 
@@ -660,6 +731,7 @@ int main(int argc, char **argv)
             ctl_handle(c);
         }
 
+        announce(c, now);
         dhp_data_tick(&c->data, now);
         poll_clipboard(c, now);
     }

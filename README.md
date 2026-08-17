@@ -125,8 +125,9 @@ implemented and tested. The coordinator daemon is implemented and tested by
 being run — including end to end against the real binary over a pseudo-terminal.
 The level 3 client is implemented and tested end to end, two real client
 processes at a time. The RP2040 firmware compiles and produces a `.uf2` but has
-never been run on hardware, and does not yet expose the vendor HID interface
-the client needs to attach to.
+never been run on hardware; its client proxy is the one part of it that is
+genuinely tested, because it touches no hardware and so compiles into the host
+test suite.
 
 [docs/status.md](docs/status.md) is specific about which is which, and about
 the design's real limitations.

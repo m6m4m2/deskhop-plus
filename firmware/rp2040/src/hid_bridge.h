@@ -39,4 +39,8 @@ bool hid_bridge_has_input_device(void);
 void hid_bridge_send_kbd(const dhp_kbd_report_t *r);
 void hid_bridge_send_mouse(const dhp_mouse_report_t *r);
 
+/* The vendor interface carrying the level 3 client link. */
+bool hid_bridge_vendor_ready(void);
+void hid_bridge_send_vendor(const uint8_t *report, uint16_t len);
+
 #endif /* DHP_HID_BRIDGE_H */

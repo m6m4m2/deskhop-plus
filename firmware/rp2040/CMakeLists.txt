@@ -37,6 +37,7 @@ add_executable(deskhop_plus
     src/main.c
     src/board.c
     src/hid_bridge.c
+    src/clientlink.c
     src/crypto_backend.c
     src/usb_descriptors.c
     ${DHP_CORE_SRC}

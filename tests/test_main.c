@@ -15,6 +15,7 @@ void test_router_suite(void);
 void test_sim_suite(void);
 void test_auth_suite(void);
 void test_data_suite(void);
+void test_clientlink_suite(void);
 
 int main(void)
 {
@@ -29,6 +30,7 @@ int main(void)
     printf("== chain sim ==\n"); test_sim_suite();
     printf("== pairing ==\n"); test_auth_suite();
     printf("== level 3 data ==\n"); test_data_suite();
+    printf("== board client proxy ==\n"); test_clientlink_suite();
 
     printf("\n%d checks, %d failures\n", dhp_test_checks, dhp_test_failures);
     return dhp_test_failures ? 1 : 0;

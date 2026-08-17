@@ -143,14 +143,54 @@ ok  DATA frames were relayed
 ok  the client emitted nothing but DATA (it cannot claim a role)
 ```
 
-## Not done
+## The board side
 
-- **The board side.** `firmware/` does not yet expose the vendor HID interface
-  or the proxy. The client is complete and tested against a socket; the board
-  end of that socket does not exist in firmware yet, so on real hardware there
-  is currently nothing for it to connect to.
+`firmware/rp2040/src/clientlink.c` is the proxy. It exposes a third HID
+interface -- vendor usage, 64 bytes each way, 1 ms polling -- and gates what
+crosses between the client and the chain.
+
+HID rather than CDC or a bulk vendor interface because it needs no driver
+anywhere: Linux exposes it as hidraw, macOS and Windows both bind HID natively.
+A device that sits between a keyboard and every machine you own should not also
+ask each of them to install something.
+
+Two messages never leave the board: the client's `ATTACH` (announcing its
+capabilities, so the board can advertise level 3 on its behalf) and the board's
+`STATUS` (which tells the client its chain address, the current focus and the
+level). The address matters: without it a client would have to be told what to
+call itself, and two clients that guessed the same value would each mistake the
+other's frames for their own echo.
+
+The proxy is deliberately free of hardware headers, so its rule is tested on a
+development machine rather than only reasoned about — `tests/test_clientlink.c`
+compiles the firmware source unchanged and stubs the two USB entry points:
+
+```
+ok  DATA is proxied onto the chain
+ok  only DATA reaches the chain (HELLO, KBD, FOCUS, RESIGN all refused)
+ok  the source address cannot be spoofed
+ok  capability follows the client
+ok  a client cannot claim COORD, HID_IN or DISPLAY
+ok  a silent client is forgotten
+ok  chain DATA reaches the client with its source intact
+```
+
+### Bandwidth
+
+A full-speed interrupt endpoint moves 64 bytes per millisecond, so this link
+tops out near 64 KB/s of wire and roughly 45 KB/s of content — **slower than
+the chain it feeds**. The client link, not the chain, is the level 3
+bottleneck, and it is another reason anything large should travel by
+`DHP_DATA_SHARE`.
+
+Outbound bytes are queued and each poll drains a full report rather than one
+report per frame; a short frame would otherwise waste most of a millisecond.
+
+## Not done
 - **Folder transfer.** `DHP_DATA_LIST` has a kind number and no implementation.
 - **The SMB share itself.** The handoff message works and is tested; nothing
   sets up a Samba share on the coordinator.
 - **Images** are wired through the same path as text and share its helpers, but
   have not been exercised against a real desktop clipboard.
+- **Follow-the-focus clipboard.** `--peer` is explicit; the board reports the
+  current focus in `STATUS` and nothing uses it yet.

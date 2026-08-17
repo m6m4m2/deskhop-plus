@@ -35,8 +35,11 @@ extern "C" {
  * than one interface with report ids, so the keyboard interface is
  * byte-for-byte a boot-protocol keyboard and a BIOS needs no special
  * handling. */
-#define CFG_TUD_HID           2
-#define CFG_TUD_HID_EP_BUFSIZE 16
+/* Keyboard, mouse, and the vendor interface the level 3 client attaches to. */
+#define CFG_TUD_HID           3
+/* 64 bytes because the vendor interface carries DHP_MAX_PAYLOAD-sized frames;
+ * the keyboard and mouse reports are far smaller and simply do not fill it. */
+#define CFG_TUD_HID_EP_BUFSIZE 64
 
 #define CFG_TUD_CDC           0
 #define CFG_TUD_MSC           0

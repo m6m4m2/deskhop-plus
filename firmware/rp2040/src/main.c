@@ -30,12 +30,14 @@
 #include "dhp/link.h"
 #include "dhp/router.h"
 
+#include "clientlink.h"
 #include "crypto_backend.h"
 #include "hid_bridge.h"
 
 static dhp_link_t   g_link;
 static dhp_router_t g_router;
 static dhp_pair_t   g_pair;
+static clientlink_t g_client;
 static bool         g_paired;
 static dhp_addr_t   g_self;
 static dhp_time_t   g_error_until;
@@ -119,6 +121,15 @@ static void on_focus(void *ctx, dhp_addr_t focus, bool is_self)
     refresh_led(board_now_ms());
 }
 
+/* A level 3 frame for this board's machine. Handing it to the client is the
+ * only thing to do with it: the board has nowhere to reassemble a transfer and
+ * no reason to. */
+static void on_data(void *ctx, const dhp_frame_t *f)
+{
+    (void)ctx;
+    clientlink_deliver(&g_client, f);
+}
+
 static void on_level(void *ctx, dhp_level_t level)
 {
     (void)ctx;
@@ -142,6 +153,12 @@ static uint16_t current_caps(void)
     if (hid_bridge_has_input_device()) {
         caps |= DHP_CAP_HID_IN;
     }
+
+    /* ...and whatever a level 3 client on this machine contributes. Advertised
+     * only while a client is actually attached and answering, so the chain's
+     * level never promises a clipboard on a machine that cannot paste. */
+    caps |= clientlink_caps(&g_client);
+
     return caps;
 }
 
@@ -189,6 +206,12 @@ static void pairing_drain(dhp_time_t now)
             g_error_active = false;
         }
     }
+}
+
+/* Called from the TinyUSB vendor-interface OUT callback in hid_bridge.c. */
+void hid_bridge_on_vendor_out(const uint8_t *data, uint16_t len)
+{
+    clientlink_rx_report(&g_client, data, len, board_now_ms());
 }
 
 /* ------------------------------------------------------------------ *
@@ -251,9 +274,11 @@ int main(void)
         .deliver_mouse = on_mouse,
         .focus_changed = on_focus,
         .level_changed = on_level,
+        .deliver_data = on_data,
         .ctx = NULL,
     };
     dhp_router_init(&g_router, &cfg, &g_link, &hooks);
+    clientlink_init(&g_client, &g_link, &g_router);
 
     /* Device stack on core 0's native controller, then the host stack on
      * core 1. Queues first, since core 0 begins draining them immediately. */
@@ -316,6 +341,8 @@ int main(void)
             dhp_router_set_caps(&g_router, caps);
             last_caps = caps;
         }
+
+        clientlink_task(&g_client, now);
 
         dhp_pair_tick(&g_pair, now);
         pairing_drain(now);

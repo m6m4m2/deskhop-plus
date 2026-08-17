@@ -223,7 +223,7 @@ static void test_derived_key_authenticates_frames(void)
     dhp_framer_init(&fr);
     int got = 0;
     for (size_t i = 0; i < n; i++) {
-        dhp_frame_t out;
+        dhp_frame_t out = {0};
         if (dhp_framer_push(&fr, wire[i], kb, &out) == DHP_OK) {
             got++;
         }

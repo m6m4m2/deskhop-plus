@@ -13,9 +13,13 @@
 
 #include "board.h"
 
+/* Defined in main.c: routes the client's bytes into the proxy. */
+void hid_bridge_on_vendor_out(const uint8_t *data, uint16_t len);
+
 enum {
     ITF_KEYBOARD = 0,
     ITF_MOUSE,
+    ITF_VENDOR,
 };
 
 /* Cross-core queues. Reports are captured in the host stack's callback on
@@ -171,6 +175,16 @@ void hid_bridge_send_mouse(const dhp_mouse_report_t *r)
     tud_hid_n_mouse_report(ITF_MOUSE, 0, r->buttons, dx, dy, r->wheel, r->pan);
 }
 
+bool hid_bridge_vendor_ready(void)
+{
+    return tud_hid_n_ready(ITF_VENDOR);
+}
+
+void hid_bridge_send_vendor(const uint8_t *report, uint16_t len)
+{
+    tud_hid_n_report(ITF_VENDOR, 0, report, (uint8_t)len);
+}
+
 /* Required by TinyUSB; this device has nothing to report on request and
  * ignores output reports such as the keyboard LED state. */
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
@@ -186,6 +200,16 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                            hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize)
 {
-    (void)instance; (void)report_id; (void)report_type; (void)buffer;
+    (void)report_id;
+
+    /* Data arriving on the interrupt OUT endpoint is reported with an invalid
+     * report type; a real SET_REPORT on the control pipe carries OUTPUT. Only
+     * the former is the client's byte stream. */
+    if (instance == ITF_VENDOR && report_type == HID_REPORT_TYPE_INVALID) {
+        hid_bridge_on_vendor_out(buffer, bufsize);
+        return;
+    }
+    /* Anything else -- notably the keyboard LED state -- is ignored. */
+    (void)buffer;
     (void)bufsize;
 }

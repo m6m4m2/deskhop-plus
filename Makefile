@@ -15,6 +15,11 @@ INCS     = -Icore/include -Itests
 CORE_SRC = $(wildcard core/src/*.c)
 TEST_SRC = $(wildcard tests/*.c)
 
+# The board's client proxy is firmware, but it is protocol logic and touches no
+# hardware, so the rule it enforces is tested here rather than only reasoned
+# about. tests/test_clientlink.c stubs the two USB entry points.
+PROXY_SRC = firmware/rp2040/src/clientlink.c
+
 BUILD    = build
 TEST_BIN = $(BUILD)/dhp-tests
 
@@ -25,7 +30,7 @@ all: test
 $(BUILD):
 	@mkdir -p $(BUILD)
 
-$(TEST_BIN): $(CORE_SRC) $(TEST_SRC) | $(BUILD)
+$(TEST_BIN): $(CORE_SRC) $(TEST_SRC) $(PROXY_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $(INCS) $^ -o $@
 
 test: $(TEST_BIN)
@@ -33,7 +38,7 @@ test: $(TEST_BIN)
 
 # The protocol stack is full of buffer arithmetic and fixed tables, so the
 # sanitised run is the one that counts.
-sanitize: $(CORE_SRC) $(TEST_SRC) | $(BUILD)
+sanitize: $(CORE_SRC) $(TEST_SRC) $(PROXY_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) -O1 -fsanitize=address,undefined \
 	      -fno-omit-frame-pointer $(INCS) $^ -o $(BUILD)/dhp-tests-san
 	@$(BUILD)/dhp-tests-san

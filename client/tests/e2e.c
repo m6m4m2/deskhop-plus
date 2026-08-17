@@ -31,6 +31,7 @@
 
 #include "dhp/frame.h"
 #include "dhp/link.h"
+#include "dhp/local.h"
 #include "dhp/msg.h"
 
 static int failures, checks;
@@ -112,7 +113,35 @@ typedef struct {
     int          fd;
     dhp_framer_t framer;
     int          peer_index;
+    dhp_addr_t   addr;      /* the chain address this board would have */
+    bool         attached;  /* the client announced itself */
+    uint16_t     seq;
 } side_t;
+
+/* What a real board sends its client so it learns who it is. */
+static void send_status(side_t *sd)
+{
+    const dhp_local_status_t st = {
+        .self = sd->addr, .focus = sd->addr, .level = 3, .boards = 2,
+    };
+    uint8_t body[DHP_LOCAL_STATUS_BYTES];
+    dhp_local_status_pack(&st, body);
+
+    const dhp_frame_t f = {
+        .type = DHP_MSG_CAP, .ttl = DHP_TTL_DEFAULT, .src = sd->addr,
+        .dst = 0x00FF, .seq = sd->seq++, .len = sizeof(body), .payload = body,
+    };
+    uint8_t wire[DHP_WIRE_MAX];
+    size_t n = 0;
+    if (dhp_frame_encode(&f, LOCAL_KEY, wire, sizeof(wire), &n) == DHP_OK) {
+        ssize_t o = 0;
+        while (o < (ssize_t)n) {
+            const ssize_t w = write(sd->fd, wire + o, n - (size_t)o);
+            if (w <= 0) break;
+            o += w;
+        }
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -162,8 +191,7 @@ int main(int argc, char **argv)
 
     const pid_t pidA = fork();
     if (pidA == 0) {
-        execl(client_bin, client_bin, "--socket", sockA, "--self", "1",
-              "--peer", "2",
+        execl(client_bin, client_bin, "--socket", sockA, "--peer", "2",
               "--outdir", outA, "--ctl", ctlA, "--paste-cmd", pasteA,
               "--copy-cmd", copyA, "--accept-files",
               getenv("DHP_E2E_VERBOSE") ? "-v" : "--accept-files", (char *)NULL);
@@ -171,8 +199,7 @@ int main(int argc, char **argv)
     }
     const pid_t pidB = fork();
     if (pidB == 0) {
-        execl(client_bin, client_bin, "--socket", sockB, "--self", "2",
-              "--peer", "1",
+        execl(client_bin, client_bin, "--socket", sockB, "--peer", "1",
               "--outdir", outB, "--ctl", ctlB, "--paste-cmd", pasteB,
               "--copy-cmd", copyB, "--accept-files",
               getenv("DHP_E2E_VERBOSE") ? "-v" : "--accept-files", (char *)NULL);
@@ -209,6 +236,8 @@ int main(int argc, char **argv)
     }
     s[0].peer_index = 1;
     s[1].peer_index = 0;
+    s[0].addr = 1;
+    s[1].addr = 2;
     dhp_framer_init(&s[0].framer);
     dhp_framer_init(&s[1].framer);
     fcntl(s[0].fd, F_SETFL, O_NONBLOCK);
@@ -218,6 +247,7 @@ int main(int argc, char **argv)
 
     int relayed_data = 0;
     int refused_non_data = 0;
+    uint64_t _next_status = 0;
 
     /* Pump the proxy for `ms`, relaying DATA and nothing else. */
 #define PUMP(ms)                                                               \
@@ -231,6 +261,12 @@ int main(int argc, char **argv)
                     dhp_frame_t _f;                                            \
                     if (dhp_framer_push(&s[_k].framer, _b[_i], LOCAL_KEY,      \
                                         &_f) != DHP_OK) {                      \
+                        continue;                                              \
+                    }                                                          \
+                    if (_f.type == DHP_MSG_CAP) {                             \
+                        /* The client announcing itself. A real board consumes \
+                         * this locally and never puts it on the chain. */     \
+                        s[_k].attached = true;                                 \
                         continue;                                              \
                     }                                                          \
                     if (_f.type != DHP_MSG_DATA) {                             \
@@ -255,6 +291,12 @@ int main(int argc, char **argv)
                         }                                                      \
                     }                                                          \
                 }                                                              \
+            }                                                                  \
+            /* Boards announce themselves once a second. */                    \
+            if (now_ms() >= _next_status) {                                    \
+                send_status(&s[0]);                                            \
+                send_status(&s[1]);                                            \
+                _next_status = now_ms() + 500;                                 \
             }                                                                  \
             usleep(2000);                                                      \
         }                                                                      \
@@ -324,6 +366,8 @@ int main(int argc, char **argv)
     free(got);
 
     /* --- the proxy saw only DATA --- */
+    CHECK(s[0].attached && s[1].attached,
+          "both clients announced themselves to their boards");
     CHECK(relayed_data > 0, "DATA frames were relayed");
     CHECK(refused_non_data == 0,
           "the client emitted nothing but DATA (it cannot claim a role)");

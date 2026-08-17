@@ -20,7 +20,10 @@ if(PROJECT_IS_TOP_LEVEL)
     enable_testing()
 
     file(GLOB DHP_TEST_SRC ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c)
-    add_executable(dhp_tests ${DHP_TEST_SRC})
+    # The board's client proxy is firmware but touches no hardware; the rule it
+    # enforces is security-critical, so it is tested here.
+    add_executable(dhp_tests ${DHP_TEST_SRC}
+        ${CMAKE_CURRENT_SOURCE_DIR}/firmware/rp2040/src/clientlink.c)
     target_link_libraries(dhp_tests PRIVATE dhp_core)
     target_include_directories(dhp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 

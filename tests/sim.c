@@ -182,7 +182,7 @@ static void deliver(sim_t *s)
                 if (!dst->powered) {
                     continue;
                 }
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_UP, b, s->now, &f) ==
                     DHP_OK) {
                     dhp_router_rx(&dst->router, &f, DHP_PORT_UP, s->now);
@@ -197,7 +197,7 @@ static void deliver(sim_t *s)
                 if (!dst->powered) {
                     continue;
                 }
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_DOWN, b, s->now,
                                      &f) == DHP_OK) {
                     dhp_router_rx(&dst->router, &f, DHP_PORT_DOWN, s->now);

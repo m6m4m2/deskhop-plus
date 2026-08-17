@@ -23,6 +23,7 @@ libc beyond `string.h`.
 | Router | Chain position derivation, input authority, focus tracking, end-of-chain behaviour |
 | Chain simulation | Level 1 timing, typing to the focused machine, pointer switching, release on switch, coordinator handover, coordinator loss, release on abrupt loss, adding a board, button cycling, chain cut and merge |
 | Pairing | Successful pairing, derived key authenticating real frames, third-party abort, late third-party abort, tampered confirmation, timeout, inertness when not pairing |
+| Board client proxy | DATA proxied, only DATA reaching the chain, source spoofing refused, capability following the client, privileged caps refused, silent client forgotten, chain data reaching the client, noise survivable |
 | Level 3 transport | Sub-chunk and multi-chunk transfers, a transfer across a four-board chain, rejection, a lossy link, a vanishing peer, concurrent streams, stream exhaustion, oversized offers, cancellation, the share handoff, an over-long name |
 
 Measured timings, printed by the suite rather than asserted in prose:
@@ -119,6 +120,11 @@ bench time:
    duration. This would have fired exactly once: on the first successful
    pairing, which is the first thing anyone tests.
 
+The board's client proxy (`clientlink.c`) is the exception to "compiles only":
+it is deliberately free of hardware headers, so it is compiled into the host
+test suite unchanged and its rules are genuinely tested — see the table above.
+Only its USB transport is unverified.
+
 What compiling does **not** establish, and what a breadboard still has to:
 
 - The TinyUSB dual-role arrangement (device on the native controller, host on
@@ -132,17 +138,15 @@ What compiling does **not** establish, and what a breadboard still has to:
   moved a byte.
 - Debounce and pairing-hold timing are guesses at reasonable values.
 - 2 Mbps across a real isolator has not been demonstrated.
+- The vendor HID interface has never enumerated, so no client has ever attached
+  to a real board. Three HID interfaces on one device is ordinary, but ordinary
+  is not the same as verified.
 - The WS2812 driver assembles to the expected four PIO instructions and its
   clock divider lands on exactly 15.0 at 120 MHz, so the bit timing is exact
   by construction — but no LED has been lit.
 
 ## Not started
 
-- **The board side of the client link.** `firmware/` does not yet expose the
-  vendor HID interface or the DATA proxy, so on real hardware there is nothing
-  for a client to attach to. This is the single largest gap: the client is
-  finished and tested against a socket, and the other end of that socket is
-  missing.
 - **Folder transfer.** `DHP_DATA_LIST` has a kind number and no implementation.
 - **The SMB share itself.** The handoff message works and is tested; nothing
   sets up a Samba share on the coordinator.

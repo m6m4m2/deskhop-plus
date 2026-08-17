@@ -171,7 +171,7 @@ static void deliver(net_t *net)
                     continue; /* corrupt the stream: a frame will fail its CRC */
                 }
                 node_t *dst = &net->n[i + 1];
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_UP, b, net->now, &f) ==
                     DHP_OK) {
                     dhp_data_rx(&dst->data, &f, net->now);
@@ -181,7 +181,7 @@ static void deliver(net_t *net)
         if (i > 0) {
             while (wire_get(&net->up[i], &b)) {
                 node_t *dst = &net->n[i - 1];
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_DOWN, b, net->now,
                                      &f) == DHP_OK) {
                     dhp_data_rx(&dst->data, &f, net->now);

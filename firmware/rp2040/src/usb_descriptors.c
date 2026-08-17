@@ -24,6 +24,13 @@
 enum {
     ITF_KEYBOARD = 0,
     ITF_MOUSE,
+    /* A vendor-usage HID interface for the level 3 client.
+     *
+     * HID rather than CDC or a bulk vendor interface because it needs no
+     * driver anywhere: Linux exposes it as hidraw, macOS and Windows both
+     * bind HID natively. A device that sits between a keyboard and every
+     * machine you own should not also ask each of them to install something. */
+    ITF_VENDOR,
     ITF_COUNT,
 };
 
@@ -60,6 +67,12 @@ static const uint8_t desc_hid_keyboard[] = {
     TUD_HID_REPORT_DESC_KEYBOARD(),
 };
 
+/* 64 bytes each way, matching DHP_MAX_PAYLOAD and the largest a full-speed
+ * interrupt endpoint carries. */
+static const uint8_t desc_hid_vendor[] = {
+    TUD_HID_REPORT_DESC_GENERIC_INOUT(64),
+};
+
 static const uint8_t desc_hid_mouse[] = {
     /* Relative, deliberately. The pointer design never models the screen, so
      * unlike upstream DeskHop there is no absolute-coordinate descriptor here
@@ -69,15 +82,22 @@ static const uint8_t desc_hid_mouse[] = {
 
 const uint8_t *tud_hid_descriptor_report_cb(uint8_t instance)
 {
-    return instance == ITF_KEYBOARD ? desc_hid_keyboard : desc_hid_mouse;
+    switch (instance) {
+    case ITF_KEYBOARD: return desc_hid_keyboard;
+    case ITF_MOUSE:    return desc_hid_mouse;
+    default:           return desc_hid_vendor;
+    }
 }
 
 /* --- configuration --- */
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + 2 * TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN                                                       \
+    (TUD_CONFIG_DESC_LEN + 2 * TUD_HID_DESC_LEN + TUD_HID_INOUT_DESC_LEN)
 
-#define EPNUM_KEYBOARD 0x81
-#define EPNUM_MOUSE    0x82
+#define EPNUM_KEYBOARD    0x81
+#define EPNUM_MOUSE       0x82
+#define EPNUM_VENDOR_OUT  0x03
+#define EPNUM_VENDOR_IN   0x83
 
 static const uint8_t desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_COUNT, 0, CONFIG_TOTAL_LEN, 0x00, 100),
@@ -90,6 +110,13 @@ static const uint8_t desc_configuration[] = {
     TUD_HID_DESCRIPTOR(ITF_MOUSE, 0, HID_ITF_PROTOCOL_MOUSE,
                        sizeof(desc_hid_mouse), EPNUM_MOUSE,
                        CFG_TUD_HID_EP_BUFSIZE, 1),
+
+    /* Protocol NONE, so no operating system mistakes this for a keyboard and
+     * starts delivering keystrokes to it. 1 ms polling: this is the level 3
+     * bottleneck, so there is no reason to ask for less. */
+    TUD_HID_INOUT_DESCRIPTOR(ITF_VENDOR, 0, HID_ITF_PROTOCOL_NONE,
+                             sizeof(desc_hid_vendor), EPNUM_VENDOR_OUT,
+                             EPNUM_VENDOR_IN, CFG_TUD_HID_EP_BUFSIZE, 1),
 };
 
 const uint8_t *tud_descriptor_configuration_cb(uint8_t index)

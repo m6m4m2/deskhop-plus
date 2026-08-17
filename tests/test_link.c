@@ -75,7 +75,7 @@ static void pump(struct bus *b, dhp_time_t now)
             for (int k = 0; k < snapshot_down[i].len; k++) {
                 any = true;
                 node_t *dst = &b->node[i + 1];
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_UP,
                                      snapshot_down[i].buf[k], now, &f) == DHP_OK) {
                     dst->delivered++;
@@ -86,7 +86,7 @@ static void pump(struct bus *b, dhp_time_t now)
             for (int k = 0; k < snapshot_up[i].len; k++) {
                 any = true;
                 node_t *dst = &b->node[i - 1];
-                dhp_frame_t f;
+                dhp_frame_t f = {0};
                 if (dhp_link_rx_byte(&dst->link, DHP_PORT_DOWN,
                                      snapshot_up[i].buf[k], now, &f) == DHP_OK) {
                     dst->delivered++;
