@@ -158,8 +158,43 @@ static void test_lone_board_still_works(void)
     CHECK(s.node[0].kbd_count > before);
 }
 
+/* Level 0: a board with no chain key is still a keyboard and mouse to its own
+ * machine. It cannot join a chain, but the machine it is plugged into must not
+ * notice that -- this is the state every board is in before it has ever been
+ * paired, and the first thing anyone tests on a bench. */
+static void test_unpaired_board_still_serves_its_machine(void)
+{
+    sim_t s;
+    sim_init(&s, 1000);
+    sim_add(&s, BOARD_WITH_KEYBOARD, false, 0x4001);
+
+    /* No key: exactly as a board comes out of the box. */
+    dhp_link_clear_key(&s.node[0].link);
+
+    sim_power(&s, 0, true);
+    sim_run(&s, 400);
+
+    /* It elects itself, because it is the only candidate. */
+    CHECK_EQ(sim_active(&s), 0);
+    CHECK_EQ(sim_focus_idx(&s), 0);
+
+    /* And typing on it reaches its own machine. */
+    const int before = s.node[0].kbd_count;
+    sim_kbd(&s, 0, 0x00, 0x04);
+    sim_run(&s, 20);
+    CHECK(s.node[0].kbd_count > before);
+    CHECK_EQ(s.node[0].last_kbd.keys[0], 0x04);
+
+    /* The mouse too. */
+    const int mbefore = s.node[0].mouse_count;
+    sim_mouse_move(&s, 0, 10, 0);
+    sim_run(&s, 20);
+    CHECK(s.node[0].mouse_count > mbefore);
+}
+
 void test_router_suite(void)
 {
+    RUN(test_unpaired_board_still_serves_its_machine);
     RUN(test_chain_positions_are_derived);
     RUN(test_only_input_board_can_inject);
     RUN(test_all_boards_track_focus);

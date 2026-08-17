@@ -412,8 +412,18 @@ int main(void)
         refresh_led(now);
         board_led_task();
 
-        if (g_paired) {
-            dhp_router_tick(&g_router, now);
-        }
+        /* Ticked whether or not this board is paired.
+         *
+         * An unpaired board is still a keyboard and mouse to its own machine
+         * -- that is what level 0 means, and it is the state every board is in
+         * before it has ever been paired. Gating the tick on g_paired stopped
+         * the election from ever settling, so the board never became the
+         * active speaker, so dhp_router_local_kbd() had nowhere to route to
+         * and silently dropped every keystroke.
+         *
+         * Nothing reaches the wire while unpaired regardless: dhp_link_send()
+         * refuses without a chain key, so the hellos this generates go
+         * nowhere, which is correct. */
+        dhp_router_tick(&g_router, now);
     }
 }
