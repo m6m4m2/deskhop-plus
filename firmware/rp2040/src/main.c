@@ -351,6 +351,32 @@ int main(void)
                 flashing = false;
             }
 
+            /* The switch button types the letter 'a' on this board's own
+             * machine.
+             *
+             * Everything proven so far -- the bring-up nudge and the real
+             * mouse -- exercised the MOUSE interface. The keyboard interface
+             * has never delivered a byte to a host, so a keyboard that mounts
+             * and reports but produces no characters has two possible causes
+             * and no way to tell them apart. This separates them: if the
+             * button types, the output path works and the fault is in how the
+             * incoming report is parsed; if it does not, the keyboard
+             * interface itself never worked. */
+            if (board_switch_pressed()) {
+                dhp_kbd_report_t k;
+                memset(&k, 0, sizeof(k));
+                k.keys[0] = 0x04; /* HID usage for 'a' */
+                hid_bridge_send_kbd(&k);
+
+                /* The release must follow, or the host repeats the key
+                 * forever -- a stuck key is exactly what this project spends
+                 * so much effort avoiding elsewhere. */
+                busy_wait_ms(20);
+                tud_task();
+                memset(&k, 0, sizeof(k));
+                hid_bridge_send_kbd(&k);
+            }
+
             board_led(flashing ? LED_FOCUSED
                                : (hid_bridge_has_input_device() ? LED_ACTIVE
                                                                 : LED_UNPAIRED));
