@@ -129,6 +129,20 @@ static inline bool dhp_router_is_active(const dhp_router_t *r)
 /* Number of live boards known, including this one. */
 uint8_t dhp_router_chain_size(const dhp_router_t *r);
 
+/* Update what this board can contribute, at runtime.
+ *
+ * Capability is not static: plugging a keyboard into a board's host port gives
+ * it DHP_CAP_HID_IN, which raises its election priority, and unplugging takes
+ * it away again. Since priority is derived from capability, this is how "the
+ * most capable wins" tracks what is actually attached rather than what was
+ * configured at boot.
+ *
+ * The new priority takes effect on the next advertisement. If this board holds
+ * the active role and has just become less capable, a better peer will preempt
+ * it in the ordinary way -- including waiting for any held key, so a keyboard
+ * unplugged mid-chord still does not strand one. */
+void dhp_router_set_caps(dhp_router_t *r, uint16_t caps);
+
 #ifdef __cplusplus
 }
 #endif

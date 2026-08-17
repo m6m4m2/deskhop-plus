@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-2.0-only
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  core:
+    name: core + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        run: make test
+
+      # The protocol stack is full of buffer arithmetic over fixed tables, so
+      # the sanitised run is the one that actually matters.
+      - name: Sanitizers
+        run: make sanitize
+
+      # core/ is compiled for a Cortex-M0+ with no libc beyond string.h.
+      # Anything that creeps in gets caught here rather than at flash time.
+      - name: Freestanding
+        run: make freestanding
+
+      - name: CMake build
+        run: |
+          cmake -B build-cmake -S .
+          cmake --build build-cmake
+          ctest --test-dir build-cmake --output-on-failure
+
+  clang:
+    name: clang + strict warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with clang
+        run: make test CC=clang

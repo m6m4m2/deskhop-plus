@@ -631,6 +631,21 @@ void dhp_router_rx(dhp_router_t *r, const dhp_frame_t *f, dhp_port_t in_port,
     }
 }
 
+void dhp_router_set_caps(dhp_router_t *r, uint16_t caps)
+{
+    if (caps == r->cfg.caps) {
+        return;
+    }
+    r->cfg.caps = caps;
+    r->uhrp.cfg.caps = caps;
+    r->uhrp.cfg.priority = dhp_uhrp_priority_from_caps(caps);
+
+    dhp_chain_entry_t *self = chain_find(r, r->cfg.self);
+    if (self) {
+        self->caps = caps;
+    }
+}
+
 void dhp_router_tick(dhp_router_t *r, dhp_time_t now)
 {
     dhp_link_tick(r->link, now);
