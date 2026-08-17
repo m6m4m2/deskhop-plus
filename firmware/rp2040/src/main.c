@@ -18,7 +18,8 @@
  */
 #include <string.h>
 
-#include "bsp/board_api.h"
+/* Deliberately not TinyUSB's bsp/board_api.h: it declares its own board_init()
+ * and this project has its own hardware layer in board.c. */
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include "tusb.h"
@@ -147,6 +148,10 @@ static void pairing_drain(dhp_time_t now)
 
 static void core1_usb_host(void)
 {
+    /* Must happen before anything else on this core: core 0 writes flash when
+     * pairing completes, and core 1 is executing from flash. */
+    board_flash_lockout_ready();
+
     hid_bridge_host_init();
     for (;;) {
         tuh_task();
@@ -197,7 +202,10 @@ int main(void)
     };
     dhp_router_init(&g_router, &cfg, &g_link, &hooks);
 
-    tusb_init();
+    /* Device stack on core 0's native controller, then the host stack on
+     * core 1. Queues first, since core 0 begins draining them immediately. */
+    tud_init(0);
+    hid_bridge_queues_init();
     multicore_launch_core1(core1_usb_host);
 
     dhp_router_start(&g_router, board_now_ms());

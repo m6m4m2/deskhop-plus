@@ -118,8 +118,12 @@ election instead of fixed roles, and the authenticated link.
 ## Status
 
 The protocol core, the election, the pointer, the link layer and pairing are
-implemented and tested. Firmware, coordinator and clients are in progress — see
-[docs/status.md](docs/status.md) for what is and is not done.
+implemented and tested. The RP2040 firmware compiles and produces a `.uf2`, but
+has never been run on hardware. The coordinator and the level 3 clients do not
+exist yet.
+
+[docs/status.md](docs/status.md) is specific about which is which, and about
+the design's real limitations.
 
 ## Licence
 

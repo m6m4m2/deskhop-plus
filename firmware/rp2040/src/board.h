@@ -78,6 +78,11 @@ typedef enum {
 
 void board_led(led_state_t s);
 
+/* Called once ON core 1 before it enters its loop. Registers core 1 as a
+ * lockout victim so that core 0 can park it while writing flash -- without
+ * this, saving the chain key crashes the board. */
+void board_flash_lockout_ready(void);
+
 /* --- persistent chain key ---
  *
  * Stored in the last flash sector. Returns false when the board has never been

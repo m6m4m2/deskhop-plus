@@ -1,0 +1,6 @@
+[submodule "third_party/Pico-PIO-USB"]
+	path = third_party/Pico-PIO-USB
+	url = https://github.com/sekigon-gonnoc/Pico-PIO-USB
+[submodule "third_party/monocypher"]
+	path = third_party/monocypher
+	url = https://github.com/LoupVaillant/Monocypher

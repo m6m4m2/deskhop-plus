@@ -6,9 +6,9 @@
 
 #include <string.h>
 
-#include "pico/mutex.h"
 #include "pico/stdlib.h"
 #include "pico/util/queue.h"
+#include "pio_usb.h"
 #include "tusb.h"
 
 #include "board.h"
@@ -31,13 +31,24 @@ static volatile bool g_have_mouse;
  * Host side -- core 1
  * ------------------------------------------------------------------ */
 
-void hid_bridge_host_init(void)
+/* Queues are created on core 0 before core 1 is launched. Creating them inside
+ * the core 1 entry point would race: core 0 starts popping from them as soon
+ * as its main loop runs, which can be before core 1 has initialised them. */
+void hid_bridge_queues_init(void)
 {
     queue_init(&g_kbd_q, sizeof(dhp_kbd_report_t), 32);
     queue_init(&g_mouse_q, sizeof(dhp_mouse_report_t), 64);
+}
 
-    /* rhport 1 is PIO-USB. The pin pair is configured by the SDK from
-     * PICO_DEFAULT_PIO_USB_DP_PIN; see CMakeLists.txt. */
+void hid_bridge_host_init(void)
+{
+    /* rhport 1 is PIO-USB. The pin pair must be handed to TinyUSB before
+     * tuh_init(), and D- is implicitly pin_dp + 1 -- the PIO program requires
+     * the two to be consecutive. */
+    pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
+    pio_cfg.pin_dp = PIN_PIO_USB_DP;
+    tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
+
     tuh_init(1);
 }
 

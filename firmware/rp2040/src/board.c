@@ -7,11 +7,13 @@
 
 #include <string.h>
 
+#include "hardware/clocks.h"
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 #include "hardware/uart.h"
+#include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 
@@ -238,6 +240,35 @@ void board_led(led_state_t s)
  * explicit about which threat is in scope.
  * ------------------------------------------------------------------ */
 
+/* Writing flash stalls the XIP cache, so any core executing from flash at that
+ * moment faults or hangs. Core 1 sits in a tight tuh_task() loop running
+ * straight out of flash, so it must be parked for the duration -- interrupts
+ * being disabled on core 0 does nothing for it. This is the classic RP2040
+ * dual-core flash hazard, and it would fire exactly once: on the first
+ * successful pairing, which is the first thing anyone tests. */
+static volatile bool g_lockout_ready;
+
+void board_flash_lockout_ready(void)
+{
+    /* Called ON core 1, once, before it starts its loop. */
+    multicore_lockout_victim_init();
+    g_lockout_ready = true;
+}
+
+static void flash_begin(void)
+{
+    if (g_lockout_ready) {
+        multicore_lockout_start_blocking();
+    }
+}
+
+static void flash_end(void)
+{
+    if (g_lockout_ready) {
+        multicore_lockout_end_blocking();
+    }
+}
+
 #define KEY_MAGIC 0x4448504bu /* "DHPK" */
 #define KEY_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 
@@ -282,19 +313,21 @@ void board_key_save(const uint8_t key[16])
     memset(page, 0xFF, sizeof(page));
     memcpy(page, &rec, sizeof(rec));
 
-    /* Flash operations must not run while the other core is executing from
-     * XIP, and must not be interrupted. */
+    flash_begin();
     const uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(KEY_OFFSET, FLASH_SECTOR_SIZE);
     flash_range_program(KEY_OFFSET, page, FLASH_PAGE_SIZE);
     restore_interrupts(ints);
+    flash_end();
 }
 
 void board_key_erase(void)
 {
+    flash_begin();
     const uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(KEY_OFFSET, FLASH_SECTOR_SIZE);
     restore_interrupts(ints);
+    flash_end();
 }
 
 /* ------------------------------------------------------------------ *
@@ -308,6 +341,12 @@ dhp_time_t board_now_ms(void)
 
 void board_init(void)
 {
+    /* Before anything else. PIO-USB bit-bangs USB in software and its PIO
+     * programs are written against a 120 MHz system clock; and doing it here
+     * means uart_init() below computes its baud divisor from the final clock
+     * rather than from the 125 MHz default. */
+    set_sys_clock_khz(120000, true);
+
     uint8_t id[8];
     board_uid_bytes(id);
     g_uid = 0;

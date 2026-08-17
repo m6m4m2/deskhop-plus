@@ -39,3 +39,38 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build with clang
         run: make test CC=clang
+
+  firmware:
+    name: rp2040 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Pico SDK
+        run: |
+          git clone --depth 1 --branch 2.1.1 \
+            https://github.com/raspberrypi/pico-sdk ~/pico-sdk
+          cd ~/pico-sdk && git submodule update --init --depth 1 lib/tinyusb
+
+      # The firmware cannot be run here, but a link failure or a dual-core
+      # hazard introduced in core/ shows up as a build break, which is most of
+      # what CI can usefully catch for an embedded target.
+      - name: Build firmware
+        env:
+          PICO_SDK_PATH: /home/runner/pico-sdk
+        run: |
+          cmake -B build-fw -S firmware/rp2040
+          cmake --build build-fw -j"$(nproc)"
+          arm-none-eabi-size build-fw/deskhop_plus.elf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskhop_plus-uf2
+          path: build-fw/deskhop_plus.uf2

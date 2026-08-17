@@ -32,31 +32,60 @@ failover in 150 ms
 dropped back to level 1 in 151 ms
 ```
 
-## Written but not verified
+## Compiles, but never run on hardware
 
-**`firmware/rp2040/`** — none of it has been compiled or run. There is no Pico
-SDK in the environment it was written in, so it has not seen a compiler at all,
-let alone hardware. Treat it as a considered starting point, not as working
-firmware. In particular:
+**`firmware/rp2040/`** builds clean for the Cortex-M0+ with the Pico SDK 2.1.1
+and produces a real `deskhop_plus.uf2`:
 
-- The TinyUSB dual-role setup (device on the native controller, host on
-  PIO-USB) is the arrangement upstream DeskHop uses and that the Pico-PIO-USB
-  examples document, but the specific initialisation order here is unverified.
-  There is a [known TinyUSB issue](https://github.com/hathach/tinyusb/discussions/3477)
-  with descriptor fetches inside `tuh_mount_cb` in dual-role configurations;
-  this code avoids fetching descriptors there, but that is reasoning, not
-  evidence.
-- The UART interrupt handlers, the flash key storage and the debounce logic
-  are all plausible and all untested.
-- `board_led()` is a stub. The WS2812 PIO program is not written.
-- `third_party/Pico-PIO-USB` and `third_party/monocypher` are referenced by
-  the build but not vendored into the tree.
+```
+   text    data     bss     dec
+ 158708       0   20216  178924
+```
 
-**Descriptors** — `DHP_PID` is a placeholder. It must be registered with
-[pid.codes](https://pid.codes) before anything is distributed.
+158 KB of flash and 20 KB of RAM, against the Pico's 2 MB and 264 KB — plenty
+of headroom. No warnings from any file in `core/` or `firmware/`.
+
+Getting it to compile turned up five genuine defects that would each have cost
+bench time:
+
+1. `PICO_DEFAULT_UART=-1` pastes into a `uart-1` token and does not compile.
+   Freeing both UARTs is done with `pico_enable_stdio_uart(... 0)`.
+2. `SYS_CLK_KHZ=120000` at compile time demands the PLL VCO and post-dividers
+   by hand. Setting the clock at runtime in `board_init()` is both simpler and
+   more correct, because `uart_init()` then computes its baud divisor from the
+   final clock rather than the 125 MHz default.
+3. The SDK's `tinyusb_host` target does not include the PIO-USB host
+   controller driver, so every `hcd_*` entry point was undefined at link time.
+   `hcd_pio_usb.c` has to be listed explicitly.
+4. `set_sys_clock_khz` was being called against an implicit declaration.
+5. **The flash/dual-core hazard.** Writing flash stalls the XIP cache, so core
+   1 — sitting in a tight `tuh_task()` loop executing straight out of flash —
+   faults or hangs. Disabling interrupts on core 0 does nothing for it. Core 1
+   now registers as a `multicore_lockout` victim and is parked for the
+   duration. This would have fired exactly once: on the first successful
+   pairing, which is the first thing anyone tests.
+
+What compiling does **not** establish, and what a breadboard still has to:
+
+- The TinyUSB dual-role arrangement (device on the native controller, host on
+  PIO-USB) links, but has never enumerated anything. This is the arrangement
+  upstream DeskHop uses and that the Pico-PIO-USB examples document, and there
+  is a [known TinyUSB issue](https://github.com/hathach/tinyusb/discussions/3477)
+  with descriptor fetches inside `tuh_mount_cb` in dual-role builds; this code
+  avoids fetching descriptors there, but that is reasoning, not evidence.
+- The UART interrupt handlers and ring buffers are single-producer /
+  single-consumer by construction and should be race-free, but have never
+  moved a byte.
+- Debounce and pairing-hold timing are guesses at reasonable values.
+- 2 Mbps across a real isolator has not been demonstrated.
+- `board_led()` is still a stub, so the board has no way to tell you what state
+  it is in. That is the single most useful thing to fix before bench work.
 
 ## Not started
 
+- **The WS2812 status LED.** `board_led()` is a stub. Without it a bench
+  session is blind to which board holds the role and which has focus, so this
+  is worth doing before the first breadboard rather than after.
 - **Coordinator** (`coordinator/`). The chain reaches level 2 when something on
   it advertises `DISPLAY` and `CONFIG`; the daemon that does so on a Pi Zero
   2 W, drives the SSD1306, and serves configuration is not written. The

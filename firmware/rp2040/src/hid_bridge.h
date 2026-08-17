@@ -20,6 +20,9 @@
 
 #include "dhp/msg.h"
 
+/* Called on core 0 before core 1 is launched. */
+void hid_bridge_queues_init(void);
+
 /* --- host side, core 1 --- */
 void hid_bridge_host_init(void);
 void hid_bridge_host_poll(void);

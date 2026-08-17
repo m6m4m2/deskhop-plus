@@ -142,6 +142,27 @@ display and configuration whenever you plug it in. Unplugging it drops back to
 level 1 in about 150 ms rather than stopping. That is verified end to end in
 `tests/test_sim.c`.
 
+## Building the firmware
+
+```sh
+git submodule update --init --recursive     # Pico-PIO-USB, Monocypher
+export PICO_SDK_PATH=/path/to/pico-sdk      # tested against SDK 2.1.1
+cmake -B build -S firmware/rp2040
+cmake --build build
+```
+
+Produces `build/deskhop_plus.uf2`. One image for every board in the chain —
+boards differ only by their flash unique id, which they read at runtime.
+
+Flash it by holding BOOTSEL while plugging the Pico in, then copying the `.uf2`
+to the mass-storage device that appears.
+
+The SDK needs its own TinyUSB submodule:
+
+```sh
+cd $PICO_SDK_PATH && git submodule update --init lib/tinyusb
+```
+
 ## Bring-up order
 
 Build and test incrementally; a chain that is wrong in two places at once is
