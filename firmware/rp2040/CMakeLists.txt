@@ -46,6 +46,9 @@ add_executable(deskhop_plus
     ${PICO_SDK_PATH}/lib/tinyusb/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
 )
 
+# Assembles ws2812.pio into a header of program descriptors and helpers.
+pico_generate_pio_header(deskhop_plus ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+
 target_include_directories(deskhop_plus PRIVATE
     ${DHP_ROOT}/core/include
     ${CMAKE_CURRENT_LIST_DIR}/src

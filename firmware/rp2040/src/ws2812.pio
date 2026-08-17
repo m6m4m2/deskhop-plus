@@ -1,0 +1,31 @@
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; WS2812 / WS2812B one-wire driver.
+;
+; The protocol encodes each bit as a fixed-period pulse whose *width* carries
+; the value: a long high is a one, a short high is a zero. Bit-banging that
+; from a core means holding timing to a few hundred nanoseconds with interrupts
+; disabled for the whole 30 us of a pixel, which on this board would disturb
+; the USB device stack. A PIO state machine does it with no CPU involvement at
+; all, which is the only reason a status LED is affordable here.
+;
+; Timing is expressed in state-machine cycles; board.c sets the clock divider
+; so that one cycle is 1/(800 kHz * 10) and the three delays below add up to
+; the 1.25 us bit period.
+
+.program ws2812
+.side_set 1
+
+.define public T1 2   ; high time common to both symbols
+.define public T2 5   ; extra high time that makes a one
+.define public T3 3   ; low tail
+
+.wrap_target
+bitloop:
+    out x, 1        side 0 [T3 - 1]   ; shift out the next bit, finish the tail
+    jmp !x do_zero  side 1 [T1 - 1]   ; go high; a zero leaves early
+do_one:
+    jmp bitloop     side 1 [T2 - 1]   ; stay high: long pulse, a one
+do_zero:
+    nop             side 0 [T2 - 1]   ; already low: short pulse, a zero
+.wrap

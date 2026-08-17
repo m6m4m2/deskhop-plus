@@ -17,6 +17,8 @@
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 
+#include "ws2812.pio.h"
+
 /* ------------------------------------------------------------------ *
  * Identity
  * ------------------------------------------------------------------ */
@@ -212,22 +214,137 @@ bool board_pair_held(void)
 /* ------------------------------------------------------------------ *
  * Indication
  *
- * Left as a stub: WS2812 output belongs on PIO, and the protocol does not
- * depend on it. Colours are chosen so the chain's state is readable at a
- * glance across a desk.
+ * A single WS2812 driven from PIO. Colours are chosen to be distinguishable
+ * across a desk at a glance, and to encode focus and routing role separately
+ * so a bench session can see both at once.
  * ------------------------------------------------------------------ */
+
+#define LED_REFRESH_MS 16 /* ~60 Hz: smooth enough for the breathing state */
+
+static PIO      g_led_pio;
+static uint     g_led_sm;
+static bool     g_led_ready;
+static bool     g_led_unavailable;
+
+static volatile led_state_t g_led_state = LED_OFF;
+static dhp_time_t g_led_next;
+static uint32_t   g_led_last_grb = 0xFFFFFFFFu; /* impossible: forces first write */
+
+void board_led_hw_init(void)
+{
+    if (g_led_ready || g_led_unavailable) {
+        return;
+    }
+
+    uint offset;
+    if (!pio_claim_free_sm_and_add_program(&ws2812_program, &g_led_pio,
+                                           &g_led_sm, &offset)) {
+        /* PIO-USB got there first and there is no room left. Run without an
+         * LED rather than fighting it for a state machine. */
+        g_led_unavailable = true;
+        return;
+    }
+
+    pio_gpio_init(g_led_pio, PIN_WS2812);
+    pio_sm_set_consecutive_pindirs(g_led_pio, g_led_sm, PIN_WS2812, 1, true);
+
+    pio_sm_config c = ws2812_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, PIN_WS2812);
+    /* Shift left, autopull at 24 bits: one GRB pixel per FIFO word, with the
+     * colour left-justified so the MSB goes out first as WS2812 expects. */
+    sm_config_set_out_shift(&c, false, true, 24);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    const int cycles_per_bit = ws2812_T1 + ws2812_T2 + ws2812_T3;
+    const float div = (float)clock_get_hz(clk_sys) / (800000.0f * cycles_per_bit);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(g_led_pio, g_led_sm, offset, &c);
+    pio_sm_set_enabled(g_led_pio, g_led_sm, true);
+
+    g_led_ready = true;
+}
 
 void board_led(led_state_t s)
 {
-    (void)s;
-    /* TODO: drive PIN_WS2812 from a PIO program.
-     *   FOCUSED  white   this machine has the user
-     *   ACTIVE   blue    this board holds the routing role
-     *   STANDBY  dim blue
-     *   PAIRING  amber, pulsing
-     *   UNPAIRED amber, steady
-     *   ERROR    red
-     */
+    /* Deliberately does no hardware work: this is called from router hooks,
+     * which run in the middle of the HID path. */
+    g_led_state = s;
+}
+
+static uint32_t grb(uint8_t r, uint8_t g, uint8_t b)
+{
+    /* WS2812 wants green first, and the state machine is configured to shift
+     * out of the top of the 32-bit word. */
+    return ((uint32_t)g << 24) | ((uint32_t)r << 16) | ((uint32_t)b << 8);
+}
+
+static uint8_t scale(uint8_t v, uint8_t pct)
+{
+    return (uint8_t)(((uint32_t)v * pct) / 100u);
+}
+
+/* A triangle wave, so "breathing" needs no sine table. */
+static uint8_t breathe(dhp_time_t now, uint32_t period_ms, uint8_t lo, uint8_t hi)
+{
+    const uint32_t phase = now % period_ms;
+    const uint32_t half = period_ms / 2;
+    const uint32_t up = phase < half ? phase : (period_ms - phase);
+    return (uint8_t)(lo + ((uint32_t)(hi - lo) * up) / half);
+}
+
+static uint32_t colour_for(led_state_t s, dhp_time_t now)
+{
+    switch (s) {
+    case LED_FOCUSED:
+        return grb(120, 120, 120); /* white */
+    case LED_ACTIVE:
+        return grb(0, 0, 150); /* blue */
+    case LED_ACTIVE_FOCUSED:
+        return grb(0, 140, 140); /* cyan */
+    case LED_STANDBY:
+        return grb(0, 0, 20); /* dim blue */
+    case LED_PAIRING: {
+        /* Breathing, because pairing is a state the user is waiting inside
+         * and a steady light gives no sign the window is still open. */
+        const uint8_t v = breathe(now, 1600, 20, 255);
+        return grb(v, scale(v, 55), 0); /* amber */
+    }
+    case LED_UNPAIRED:
+        return grb(40, 22, 0); /* dim amber */
+    case LED_ERROR:
+        return (now % 300) < 150 ? grb(200, 0, 0) : 0; /* fast red blink */
+    case LED_OFF:
+    default:
+        return 0;
+    }
+}
+
+void board_led_task(void)
+{
+    if (!g_led_ready) {
+        return;
+    }
+
+    const dhp_time_t now = board_now_ms();
+    if (!dhp_time_after(now, g_led_next)) {
+        return;
+    }
+    g_led_next = now + LED_REFRESH_MS;
+
+    const uint32_t c = colour_for(g_led_state, now);
+
+    /* Only push when something changed, so a static state costs nothing on
+     * the wire and the FIFO is always free when it does change. */
+    if (c == g_led_last_grb) {
+        return;
+    }
+    if (pio_sm_is_tx_fifo_full(g_led_pio, g_led_sm)) {
+        return; /* try again next tick rather than blocking the HID path */
+    }
+
+    pio_sm_put(g_led_pio, g_led_sm, c);
+    g_led_last_grb = c;
 }
 
 /* ------------------------------------------------------------------ *

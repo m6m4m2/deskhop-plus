@@ -37,6 +37,9 @@ static dhp_link_t   g_link;
 static dhp_router_t g_router;
 static dhp_pair_t   g_pair;
 static bool         g_paired;
+static dhp_addr_t   g_self;
+static dhp_time_t   g_error_until;
+static bool         g_error_active;
 
 /* ------------------------------------------------------------------ *
  * Link plumbing
@@ -64,13 +67,56 @@ static void on_mouse(void *ctx, const dhp_mouse_report_t *r)
     hid_bridge_send_mouse(r);
 }
 
+/* Indication is derived in one place from the whole of the board's state.
+ * Setting it from each callback separately does not work: a callback only
+ * knows about the thing it was told, so the focus hook would happily
+ * overwrite the routing role and vice versa. */
+static void refresh_led(dhp_time_t now)
+{
+    /* Guarded by a flag rather than by comparing g_error_until against zero.
+     * dhp_time_after() is a wrap-safe *ordering* test between two real
+     * timestamps; against a sentinel it starts returning true once the
+     * millisecond counter passes the halfway mark, which would latch the LED
+     * to ERROR after about 25 days of uptime. */
+    if (g_error_active) {
+        if (!dhp_time_after(now, g_error_until)) {
+            board_led(LED_ERROR);
+            return;
+        }
+        g_error_active = false;
+    }
+    if (g_pair.state == DHP_PAIR_WAITING ||
+        g_pair.state == DHP_PAIR_CONFIRM_WAIT) {
+        board_led(LED_PAIRING);
+        return;
+    }
+    if (!g_paired) {
+        board_led(LED_UNPAIRED);
+        return;
+    }
+
+    const bool focused = (dhp_router_focus(&g_router) == g_self);
+    const bool active = dhp_router_is_active(&g_router);
+
+    if (active && focused) {
+        board_led(LED_ACTIVE_FOCUSED);
+    } else if (active) {
+        board_led(LED_ACTIVE);
+    } else if (focused) {
+        board_led(LED_FOCUSED);
+    } else if (g_router.uhrp.state == DHP_UHRP_STANDBY) {
+        board_led(LED_STANDBY);
+    } else {
+        board_led(LED_OFF);
+    }
+}
+
 static void on_focus(void *ctx, dhp_addr_t focus, bool is_self)
 {
     (void)ctx;
     (void)focus;
-    board_led(is_self ? LED_FOCUSED
-                      : (dhp_router_is_active(&g_router) ? LED_ACTIVE
-                                                         : LED_OFF));
+    (void)is_self;
+    refresh_led(board_now_ms());
 }
 
 static void on_level(void *ctx, dhp_level_t level)
@@ -128,7 +174,10 @@ static void pairing_drain(dhp_time_t now)
         if (n) {
             dhp_link_send(&g_link, DHP_MSG_PAIR, DHP_ADDR_BROADCAST, buf, n, now);
         }
-        board_led(LED_ERROR);
+        /* Hold the error colour long enough to be seen, then fall back to
+         * whatever the board's real state is. */
+        g_error_until = now + 4000;
+        g_error_active = true;
     }
 
     if (ev.completed) {
@@ -137,7 +186,7 @@ static void pairing_drain(dhp_time_t now)
             board_key_save(key);
             dhp_link_set_key(&g_link, key);
             g_paired = true;
-            board_led(LED_OFF);
+            g_error_active = false;
         }
     }
 }
@@ -153,6 +202,10 @@ static void core1_usb_host(void)
     board_flash_lockout_ready();
 
     hid_bridge_host_init();
+
+    /* Only now. In host mode PIO-USB claims state machines in both PIO blocks,
+     * so the LED must take what is left rather than compete for it. */
+    board_led_hw_init();
     for (;;) {
         tuh_task();
         hid_bridge_host_poll();
@@ -166,6 +219,7 @@ int main(void)
 
     const dhp_addr_t addr = board_addr();
     const dhp_uid_t uid = board_uid();
+    g_self = addr;
 
     dhp_link_init(&g_link, addr, on_tx, NULL);
 
@@ -173,11 +227,10 @@ int main(void)
     g_paired = board_key_load(key);
     if (g_paired) {
         dhp_link_set_key(&g_link, key);
-    } else {
-        /* Not an error. An unpaired board is still a keyboard and mouse to its
-         * own machine -- level 0 -- and simply cannot join a chain yet. */
-        board_led(LED_UNPAIRED);
     }
+    /* An unpaired board is not an error: it is still a keyboard and mouse to
+     * its own machine -- level 0 -- and simply cannot join a chain yet.
+     * refresh_led() shows that state below. */
     memset(key, 0, sizeof(key));
 
     dhp_pair_init(&g_pair, crypto_backend(), uid);
@@ -266,6 +319,9 @@ int main(void)
 
         dhp_pair_tick(&g_pair, now);
         pairing_drain(now);
+
+        refresh_led(now);
+        board_led_task();
 
         if (g_paired) {
             dhp_router_tick(&g_router, now);

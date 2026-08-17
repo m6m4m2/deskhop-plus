@@ -66,17 +66,37 @@ bool board_pair_held(void);
 
 /* --- indication --- */
 
+/* Focus and role are independent -- a board can hold the routing role while
+ * the user is typing on a different machine, or both at once -- so they get
+ * distinct colours rather than one overwriting the other. Being able to see
+ * which board is routing while watching the user's focus move is most of the
+ * value of having an LED at all. */
 typedef enum {
-    LED_OFF,
-    LED_FOCUSED,      /* this machine has the user */
-    LED_ACTIVE,       /* this board holds the routing role */
-    LED_STANDBY,
-    LED_PAIRING,
-    LED_UNPAIRED,     /* no chain key: the board can do nothing but pair */
-    LED_ERROR,
+    LED_OFF,            /* on the chain, neither focused nor routing */
+    LED_FOCUSED,        /* white:  this machine has the user */
+    LED_ACTIVE,         /* blue:   this board routes; the user is elsewhere */
+    LED_ACTIVE_FOCUSED, /* cyan:   routes and has the user */
+    LED_STANDBY,        /* dim blue: pre-elected backup */
+    LED_PAIRING,        /* amber, breathing */
+    LED_UNPAIRED,       /* amber, dim steady: no chain key */
+    LED_ERROR,          /* red, fast blink */
 } led_state_t;
 
+/* Cheap: stores the state and returns. Safe from any hook or callback. */
 void board_led(led_state_t s);
+
+/* Renders. Call from the core 0 main loop; it rate-limits itself and drives
+ * the breathing and blinking animations. */
+void board_led_task(void);
+
+/* Claims a PIO state machine for the LED.
+ *
+ * Must be called from core 1 AFTER PIO-USB has claimed what it needs. In host
+ * mode PIO-USB uses state machines in *both* PIO blocks, so the LED can only
+ * have whatever is left over -- and if nothing is, it does without rather than
+ * taking a resource USB needs. Indication is a convenience; being a keyboard
+ * is not. */
+void board_led_hw_init(void);
 
 /* Called once ON core 1 before it enters its loop. Registers core 1 as a
  * lockout victim so that core 0 can park it while writing flash -- without

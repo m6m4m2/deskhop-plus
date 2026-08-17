@@ -78,14 +78,12 @@ What compiling does **not** establish, and what a breadboard still has to:
   moved a byte.
 - Debounce and pairing-hold timing are guesses at reasonable values.
 - 2 Mbps across a real isolator has not been demonstrated.
-- `board_led()` is still a stub, so the board has no way to tell you what state
-  it is in. That is the single most useful thing to fix before bench work.
+- The WS2812 driver assembles to the expected four PIO instructions and its
+  clock divider lands on exactly 15.0 at 120 MHz, so the bit timing is exact
+  by construction — but no LED has been lit.
 
 ## Not started
 
-- **The WS2812 status LED.** `board_led()` is a stub. Without it a bench
-  session is blind to which board holds the role and which has focus, so this
-  is worth doing before the first breadboard rather than after.
 - **Coordinator** (`coordinator/`). The chain reaches level 2 when something on
   it advertises `DISPLAY` and `CONFIG`; the daemon that does so on a Pi Zero
   2 W, drives the SSD1306, and serves configuration is not written. The

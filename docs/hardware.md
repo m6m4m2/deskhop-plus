@@ -89,6 +89,57 @@ against its datasheet before substituting, as the pin numbering differs.
 Both parts are SOP-8. You have 20 SOP8→DIP8 adapter boards, which is what
 makes this breadboard-able.
 
+## Status LED
+
+One WS2812B on GP16, driven from a PIO state machine so it costs the CPU
+nothing — bit-banging it would mean holding timing to a few hundred nanoseconds
+with interrupts off for 30 µs per pixel, which would disturb the USB device
+stack.
+
+| Colour | Meaning |
+|---|---|
+| white | this machine has the user |
+| blue | this board holds the routing role, user is elsewhere |
+| cyan | both: routing *and* has the user |
+| dim blue | pre-elected standby |
+| amber, breathing | pairing window open |
+| amber, dim steady | unpaired — no chain key |
+| red, fast blink | pairing failed (4 s, then back to real state) |
+
+Focus and role get separate colours deliberately: they are independent, and
+watching which board routes while the user's focus moves is most of what makes
+a bench session legible.
+
+### The 3.3 V data problem
+
+WS2812B is a 5 V part, and its data threshold is about 0.7 × VDD — so at a 5 V
+supply it wants 3.5 V to register a one, and the RP2040 puts out 3.3 V. It
+often works anyway, and it is exactly the kind of marginal that behaves on the
+bench and fails in the finished build.
+
+The cheap fix uses parts you already have: feed the LED through a **1N4148 in
+series with its 5 V supply**. The ~0.7 V drop puts it at roughly 4.3 V, which
+moves the threshold down to about 3.0 V and gives the 3.3 V data line real
+margin.
+
+```
+   VBUS (5V) ──|>|── LED VDD        1N4148, band toward the LED
+                        │
+                     100 nF to GND, at the LED
+   GP16 ───────────── LED DIN
+```
+
+If you would rather not, powering the LED from 3V3 also works — it is dimmer
+and the colours shift, but the threshold problem disappears entirely.
+
+### If the LED never lights
+
+There is one case where this is expected rather than broken. In host mode
+PIO-USB claims state machines in **both** PIO blocks, and the LED deliberately
+takes only what is left over — if there is no room, it does without rather than
+competing for a resource USB needs. Being a keyboard matters more than
+indication. `board_led_hw_init()` sets a flag and returns quietly in that case.
+
 ### Ground rule
 
 Do **not** tie the grounds of two boards together anywhere. If you power two
