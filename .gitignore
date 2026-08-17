@@ -1,0 +1,11 @@
+build/
+cmake-build*/
+*.o
+*.a
+*.elf
+*.uf2
+*.bin
+*.map
+*.dis
+compile_commands.json
+.cache/
