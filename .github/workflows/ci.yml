@@ -40,6 +40,22 @@ jobs:
       - name: Build with clang
         run: make test CC=clang
 
+  coordinator:
+    name: coordinator daemon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Includes the end-to-end test, which runs the real daemon against a
+      # pty with a real chain board on the other end.
+      - name: Build and test
+        run: |
+          cmake -B build-coord -S coordinator
+          cmake --build build-coord -j"$(nproc)"
+          ctest --test-dir build-coord --output-on-failure
+
   firmware:
     name: rp2040 firmware
     runs-on: ubuntu-latest

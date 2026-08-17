@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[Unit]
+Description=DeskHop+ coordinator (level 2: status display and configuration)
+Documentation=https://github.com/m6m4m2/deskhop-plus
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/deskhop-coord --config /etc/deskhop/coordinator.conf
+
+# The chain does not depend on this process. If it dies the boards drop back to
+# level 1 within about 150 ms and carry on working, so restarting promptly is
+# worth more than any restart-limit policy would be.
+Restart=always
+RestartSec=1
+
+# Needs the UART and the I2C bus, and writes only its own state directory.
+SupplementaryGroups=dialout i2c
+StateDirectory=deskhop
+StateDirectoryMode=0700
+ConfigurationDirectory=deskhop
+RuntimeDirectory=deskhop
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

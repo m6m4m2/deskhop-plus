@@ -84,7 +84,7 @@ failover timing and the level transitions testable at all.
 ```
 core/          Freestanding C11. No allocation, no I/O, no clock access.
 firmware/      RP2040: USB, UART, PIO, buttons, LED. Glue only.
-coordinator/   Pi Zero 2 W: display, configuration.
+coordinator/   Pi Zero 2 W: display, configuration. Runs the same core/.
 client/        Level 3, per machine.
 tests/         Host-run. Real protocol code, simulated wires and clock.
 docs/          Architecture and the four protocol specifications.
@@ -99,6 +99,7 @@ from its neighbours, with a Pi Zero 2 W as the optional coordinator.
 
 **[docs/hardware.md](docs/hardware.md)** has the pin assignment, the isolator
 wiring, and a bring-up order that lets you test one thing at a time.
+**[docs/coordinator.md](docs/coordinator.md)** covers the level 2 daemon.
 
 The final product is a modular chain you extend by adding boards, all running
 one firmware image with one identity — deliberately identifiable and
@@ -118,9 +119,10 @@ election instead of fixed roles, and the authenticated link.
 ## Status
 
 The protocol core, the election, the pointer, the link layer and pairing are
-implemented and tested. The RP2040 firmware compiles and produces a `.uf2`, but
-has never been run on hardware. The coordinator and the level 3 clients do not
-exist yet.
+implemented and tested. The coordinator daemon is implemented and tested by
+being run — including end to end against the real binary over a pseudo-terminal.
+The RP2040 firmware compiles and produces a `.uf2` but has never been run on
+hardware. The level 3 clients do not exist yet.
 
 [docs/status.md](docs/status.md) is specific about which is which, and about
 the design's real limitations.

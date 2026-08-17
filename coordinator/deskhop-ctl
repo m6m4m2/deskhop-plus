@@ -1,0 +1,41 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Talk to a running coordinator over its control socket.
+#
+#   deskhop-ctl status
+#   deskhop-ctl pair
+#   deskhop-ctl focus 2
+#   deskhop-ctl set pointer_push 800
+#   deskhop-ctl save
+#
+# A shell wrapper rather than a compiled tool: the protocol is one datagram of
+# text each way, and something that works over a stock socat is easier to
+# debug at 2am than something that needs building.
+
+set -eu
+
+SOCK="${DESKHOP_SOCK:-/run/deskhop-coord.sock}"
+
+if [ $# -eq 0 ]; then
+    echo "usage: deskhop-ctl status|pair|focus <addr>|set <key> <value>|save [path]" >&2
+    exit 2
+fi
+
+if [ ! -S "$SOCK" ]; then
+    echo "deskhop-ctl: no coordinator at $SOCK" >&2
+    echo "  (is deskhop-coord running? set DESKHOP_SOCK to override)" >&2
+    exit 1
+fi
+
+if ! command -v socat >/dev/null 2>&1; then
+    echo "deskhop-ctl: needs socat (apt install socat)" >&2
+    exit 1
+fi
+
+# A reply address is required: the daemon answers with sendto(), so an unbound
+# client socket would get the reply dropped and this would look like a hang.
+REPLY="${TMPDIR:-/tmp}/deskhop-ctl.$$"
+trap 'rm -f "$REPLY"' EXIT
+
+printf '%s' "$*" | socat -t2 - "UNIX-SENDTO:$SOCK,bind=$REPLY"

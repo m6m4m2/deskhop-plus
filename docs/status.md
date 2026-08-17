@@ -32,6 +32,34 @@ failover in 150 ms
 dropped back to level 1 in 151 ms
 ```
 
+## Verified: the coordinator daemon
+
+`coordinator/` builds and **runs**, and unlike the firmware it is tested by
+being executed rather than only compiled. Two suites, both in CI:
+
+**`display`** renders every status screen into a framebuffer and checks it —
+title, chain row, focus inversion, the pairing screen, oversized counters, a
+full 16-board chain, an empty chain, lowercase folding, and clipping at the
+right edge. No panel or I2C bus involved.
+
+**`end_to_end`** is the one place a daemon is actually run. A pseudo-terminal
+stands in for the UART, a real chain board built from the real `core/` sits on
+one end, and the actual `deskhop-coord` binary is exec'd on the other — so the
+termios setup, the serial read/write path, frame assembly across arbitrary read
+boundaries and the whole event loop are all exercised:
+
+```
+ok   board alone takes the routing role (level 1, no coordinator)
+ok   coordinator preempted and took the routing role   (20 ms)
+ok   board sees level 2 once the coordinator is present
+ok   focus survives the handover
+ok   board retook the role after the coordinator was killed  (140 ms)
+ok   degraded back to level 1 rather than stopping
+```
+
+What that does not cover: a real PL011 at 2 Mbps (a pty ignores baud rate
+entirely), a real SSD1306 over I2C, and the Pi's own boot timing.
+
 ## Compiles, but never run on hardware
 
 **`firmware/rp2040/`** builds clean for the Cortex-M0+ with the Pico SDK 2.1.1
@@ -84,11 +112,6 @@ What compiling does **not** establish, and what a breadboard still has to:
 
 ## Not started
 
-- **Coordinator** (`coordinator/`). The chain reaches level 2 when something on
-  it advertises `DISPLAY` and `CONFIG`; the daemon that does so on a Pi Zero
-  2 W, drives the SSD1306, and serves configuration is not written. The
-  protocol side is done and tested — the simulation stands in a coordinator and
-  exercises the handover in both directions — but no Pi-side code exists.
 - **Level 3 clients** (`client/`). `DHP_MSG_DATA` has a type number and nothing
   behind it. Clipboard, files, images and the SMB share are unimplemented.
 - **Chunking for `DATA`.** The 64-byte payload limit means anything larger than
