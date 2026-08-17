@@ -365,9 +365,33 @@ int main(void)
 #endif
         }
 
-        if (board_pair_held() && g_pair.state != DHP_PAIR_WAITING) {
-            board_led(LED_PAIRING);
-            dhp_pair_begin(&g_pair, now, 30000);
+        switch (board_pair_button()) {
+        case BOARD_PAIR_BTN_PAIR:
+            if (g_pair.state != DHP_PAIR_WAITING) {
+                dhp_pair_begin(&g_pair, now, 30000);
+            }
+            break;
+
+        case BOARD_PAIR_BTN_UNPAIR:
+            /* Forget the chain key and go back to level 0.
+             *
+             * Without this a mispaired board is unrecoverable short of
+             * reflashing, and the symptom gives nothing away: two boards
+             * holding different keys simply discard each other's frames, so
+             * the chain looks dead rather than misconfigured. */
+            board_key_erase();
+            dhp_link_clear_key(&g_link);
+            g_paired = false;
+            dhp_pair_init(&g_pair, crypto_backend(), uid);
+            /* Flash so the hold is visibly acknowledged; refresh_led() then
+             * settles on UNPAIRED, which is now the truth. */
+            g_error_until = now + 1500;
+            g_error_active = true;
+            break;
+
+        case BOARD_PAIR_BTN_NONE:
+        default:
+            break;
         }
 
         /* Plugging a keyboard in raises this board's priority; unplugging it

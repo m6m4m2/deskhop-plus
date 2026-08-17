@@ -14,7 +14,7 @@ board.
 | Coordinator | Raspberry Pi Zero 2 W | Boots in 15–20 s, which is the number the whole staged-startup design is built around. Drives the display and holds configuration. |
 | Status display | SSD1306 128×64 I²C | Level 2 only. |
 | Status LED | WS2812B | Per-board focus/role indication. |
-| Buttons | 6×6 tactile | One to switch machines, one to pair. |
+| Buttons | 6×6 tactile | One to switch machines, one to pair. Three is the minimum for a two-board chain -- see below. |
 
 You have 4 Picos, so a 4-machine chain is buildable today, with 10 of each
 isolator — far more than the 3 links a 4-board chain needs.
@@ -88,6 +88,35 @@ against its datasheet before substituting, as the pin numbering differs.
 
 Both parts are SOP-8. You have 20 SOP8→DIP8 adapter boards, which is what
 makes this breadboard-able.
+
+## Buttons, and why three is the minimum
+
+Pairing requires a deliberate physical action on **both** boards within one
+window. That is the only channel an attacker on the wire does not have, so it
+cannot be reduced to a single button somewhere. A two-board chain therefore
+needs two pair buttons at minimum.
+
+The switch button only does anything on the board that currently holds the
+routing role, so one is enough to drive a bench session:
+
+| Board | Buttons |
+|---|---|
+| the one with the keyboard | pair (GP14) **and** switch (GP15) |
+| the other | pair (GP14) |
+
+### The pair button does two things
+
+| Hold | |
+|---|---|
+| ~3 s | begin pairing |
+| ~10 s | **forget the chain key** and return to level 0 |
+
+The second matters more than it looks. A mispaired board is otherwise
+unrecoverable without reflashing, and the symptom gives nothing away: two
+boards holding different keys simply discard each other's frames, so the chain
+looks dead rather than misconfigured. Watch the `AUTH` counter on the
+coordinator's display -- climbing means a key mismatch, and a ten-second hold
+on both boards followed by a fresh pairing is the fix.
 
 ## Status LED
 

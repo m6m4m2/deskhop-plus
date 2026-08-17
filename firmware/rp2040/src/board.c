@@ -164,11 +164,17 @@ static void link_init(void)
 
 #define DEBOUNCE_MS 25
 #define PAIR_HOLD_MS 3000
+/* Long enough that nobody reaches it by accident, short enough to be usable
+ * when a pairing has gone wrong. That case is otherwise unrecoverable without
+ * reflashing, and it fails silently -- two boards holding different keys just
+ * refuse each other's frames. */
+#define UNPAIR_HOLD_MS 10000
 
 static bool       g_switch_last;
 static dhp_time_t g_switch_change;
 static dhp_time_t g_pair_down_since;
 static bool       g_pair_reported;
+static bool       g_unpair_reported;
 
 bool board_switch_pressed(void)
 {
@@ -187,7 +193,7 @@ bool board_switch_pressed(void)
     return false;
 }
 
-bool board_pair_held(void)
+board_pair_btn_t board_pair_button(void)
 {
     const bool down = !gpio_get(PIN_BTN_PAIR);
     const dhp_time_t now = board_now_ms();
@@ -195,20 +201,27 @@ bool board_pair_held(void)
     if (!down) {
         g_pair_down_since = 0;
         g_pair_reported = false;
-        return false;
+        g_unpair_reported = false;
+        return BOARD_PAIR_BTN_NONE;
     }
     if (g_pair_down_since == 0) {
         g_pair_down_since = now;
-        return false;
+        return BOARD_PAIR_BTN_NONE;
     }
 
-    /* A hold rather than a click: pairing should not be reachable by brushing
-     * against the board, since it is the one action that grants trust. */
-    if (!g_pair_reported && dhp_time_after(now, g_pair_down_since + PAIR_HOLD_MS)) {
-        g_pair_reported = true;
-        return true;
+    /* Longer hold checked first, so continuing to hold past the pairing
+     * threshold reaches it rather than being swallowed by the shorter one. */
+    if (!g_unpair_reported &&
+        dhp_time_after(now, g_pair_down_since + UNPAIR_HOLD_MS)) {
+        g_unpair_reported = true;
+        return BOARD_PAIR_BTN_UNPAIR;
     }
-    return false;
+    if (!g_pair_reported &&
+        dhp_time_after(now, g_pair_down_since + PAIR_HOLD_MS)) {
+        g_pair_reported = true;
+        return BOARD_PAIR_BTN_PAIR;
+    }
+    return BOARD_PAIR_BTN_NONE;
 }
 
 /* ------------------------------------------------------------------ *

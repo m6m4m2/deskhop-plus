@@ -59,10 +59,20 @@ bool board_uart_read(dhp_port_t port, uint8_t *out);
 /* Edge-triggered: true once per press. */
 bool board_switch_pressed(void);
 
-/* True while the pairing button has been held for the required time. Holding
- * rather than clicking is deliberate -- pairing should not be reachable by
- * brushing against the board. */
-bool board_pair_held(void);
+/* What the pair button has just asked for, reported once per press.
+ *
+ * Both actions are holds rather than clicks: pairing grants trust and
+ * unpairing withdraws it, and neither should be reachable by brushing against
+ * the board. They share one button because they share one piece of state --
+ * whether this board has a chain key -- and because a board only has room for
+ * so many buttons. */
+typedef enum {
+    BOARD_PAIR_BTN_NONE = 0,
+    BOARD_PAIR_BTN_PAIR,   /* held ~3 s: begin pairing */
+    BOARD_PAIR_BTN_UNPAIR, /* held ~10 s: forget the chain key */
+} board_pair_btn_t;
+
+board_pair_btn_t board_pair_button(void);
 
 /* --- indication --- */
 
