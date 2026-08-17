@@ -315,6 +315,51 @@ int main(void)
     for (;;) {
         const dhp_time_t now = board_now_ms();
 
+#ifdef DHP_DIAG
+        /* Diagnostic image. The LED reports what the USB *host* stack actually
+         * sees, and captured input is forwarded straight to this board's own
+         * machine with the router bypassed entirely.
+         *
+         * That splits one silent failure into three distinguishable ones:
+         *   amber  no device ever mounted   -> wiring, signalling or PIO-USB
+         *   blue   mounted, no reports      -> enumeration succeeded but the
+         *                                      report pipeline is stalled
+         *   white  reports arriving         -> the host side is fine and the
+         *                                      fault is in routing
+         * The third case is the one worth knowing about, because everything
+         * downstream of it is my code rather than the hardware. */
+        {
+            static dhp_time_t flash_until;
+            static bool flashing;
+            bool saw_report = false;
+
+            dhp_kbd_report_t dk;
+            while (hid_bridge_pop_kbd(&dk)) {
+                hid_bridge_send_kbd(&dk);
+                saw_report = true;
+            }
+            dhp_mouse_report_t dm;
+            while (hid_bridge_pop_mouse(&dm)) {
+                hid_bridge_send_mouse(&dm);
+                saw_report = true;
+            }
+            if (saw_report) {
+                flash_until = now + 250;
+                flashing = true;
+            }
+            if (flashing && dhp_time_after(now, flash_until)) {
+                flashing = false;
+            }
+
+            board_led(flashing ? LED_FOCUSED
+                               : (hid_bridge_has_input_device() ? LED_ACTIVE
+                                                                : LED_UNPAIRED));
+            board_led_task();
+            tud_task();
+            continue;
+        }
+#endif
+
         tud_task();
 
         /* Drain both link ports. A frame addressed elsewhere is relayed inside

@@ -123,4 +123,28 @@ pico_enable_stdio_uart(deskhop_bringup 0)
 pico_enable_stdio_usb(deskhop_bringup 0)
 pico_add_extra_outputs(deskhop_bringup)
 
+# Third image: PIO-USB host enabled like the full build, but the LED reports
+# what the host stack sees and input bypasses the router. For diagnosing a
+# keyboard that does not type, where the fault could be anywhere between the
+# socket and the routing logic.
+add_executable(deskhop_diag
+    src/main.c src/board.c src/hid_bridge.c src/clientlink.c
+    src/crypto_backend.c src/usb_descriptors.c
+    ${DHP_CORE_SRC}
+    ${PICO_SDK_PATH}/lib/tinyusb/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
+)
+target_include_directories(deskhop_diag PRIVATE
+    ${DHP_ROOT}/core/include ${CMAKE_CURRENT_LIST_DIR}/src
+    ${PICO_SDK_PATH}/lib/tinyusb/src)
+target_compile_definitions(deskhop_diag PRIVATE
+    PICO_DEFAULT_PIO_USB_DP_PIN=0 DHP_DIAG=1)
+target_link_libraries(deskhop_diag PRIVATE
+    pico_stdlib pico_multicore pico_unique_id
+    hardware_pio hardware_dma hardware_flash hardware_uart hardware_clocks
+    tinyusb_device tinyusb_host pico_pio_usb monocypher)
+pico_generate_pio_header(deskhop_diag ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+pico_enable_stdio_uart(deskhop_diag 0)
+pico_enable_stdio_usb(deskhop_diag 0)
+pico_add_extra_outputs(deskhop_diag)
+
 pico_add_extra_outputs(deskhop_plus)
