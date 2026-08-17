@@ -23,6 +23,7 @@ libc beyond `string.h`.
 | Router | Chain position derivation, input authority, focus tracking, end-of-chain behaviour |
 | Chain simulation | Level 1 timing, typing to the focused machine, pointer switching, release on switch, coordinator handover, coordinator loss, release on abrupt loss, adding a board, button cycling, chain cut and merge |
 | Pairing | Successful pairing, derived key authenticating real frames, third-party abort, late third-party abort, tampered confirmation, timeout, inertness when not pairing |
+| Level 3 transport | Sub-chunk and multi-chunk transfers, a transfer across a four-board chain, rejection, a lossy link, a vanishing peer, concurrent streams, stream exhaustion, oversized offers, cancellation, the share handoff, an over-long name |
 
 Measured timings, printed by the suite rather than asserted in prose:
 
@@ -31,6 +32,31 @@ level 1 usable after 150 ms
 failover in 150 ms
 dropped back to level 1 in 151 ms
 ```
+
+## Verified: the level 3 client
+
+`client/` builds and runs. `client_end_to_end` starts **two real
+`deskhop-client` processes**, each on a Unix socket standing in for its board,
+and plays the pair of boards between them — relaying `DATA` and nothing else,
+exactly as a real board would. The clipboard helpers point at files, so the
+whole path is observable:
+
+```
+ok  both clients connected to their boards
+ok  clipboard text reached the other machine
+ok  20 KB clipboard survived segmentation and reassembly
+ok  file arrived on the other machine and was written to disk
+ok  DATA frames were relayed
+ok  the client emitted nothing but DATA (it cannot claim a role)
+```
+
+That last check is the security property, asserted rather than asserted-about:
+the proxy counts every frame the client emits and the test fails if any of them
+is not `DATA`.
+
+Not covered: a real desktop clipboard (the helpers are files here), images
+against a real desktop, and the board side of the link — which does not exist
+yet, see below.
 
 ## Verified: the coordinator daemon
 
@@ -112,11 +138,14 @@ What compiling does **not** establish, and what a breadboard still has to:
 
 ## Not started
 
-- **Level 3 clients** (`client/`). `DHP_MSG_DATA` has a type number and nothing
-  behind it. Clipboard, files, images and the SMB share are unimplemented.
-- **Chunking for `DATA`.** The 64-byte payload limit means anything larger than
-  a short clipboard string needs segmentation and reassembly, which is not
-  designed yet.
+- **The board side of the client link.** `firmware/` does not yet expose the
+  vendor HID interface or the DATA proxy, so on real hardware there is nothing
+  for a client to attach to. This is the single largest gap: the client is
+  finished and tested against a socket, and the other end of that socket is
+  missing.
+- **Folder transfer.** `DHP_DATA_LIST` has a kind number and no implementation.
+- **The SMB share itself.** The handoff message works and is tested; nothing
+  sets up a Samba share on the coordinator.
 - **Configuration persistence** beyond the chain key.
 - **Hotkey switching.** `DHP_FOCUS_R_HOTKEY` is defined; nothing detects a
   hotkey, which needs a keystroke-interception policy that has not been decided.
@@ -146,6 +175,11 @@ possession of a board.
 2 Mbps for a mouse frame, so under 400 µs across four boards — inside the 1 ms
 budget of a 1 kHz mouse, but a very long chain would eventually be felt. Cut-
 through forwarding would fix it and is not implemented.
+
+**Bulk data is slow, on purpose.** The chain moves roughly 100 KB/s, so a 1 GB
+file would take about three hours. That is not a defect to optimise away: a
+keyboard cable is the wrong place for a gigabyte, which is why `DHP_DATA_SHARE`
+carries a location and lets the network carry the bytes.
 
 **`DHP_MAX_BOARDS` is 16.** Every table in `core/` is a fixed array so that
 nothing allocates; a longer chain needs the constant raised and the RAM to

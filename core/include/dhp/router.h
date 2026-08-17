@@ -53,6 +53,13 @@ typedef struct {
     void (*deliver_mouse)(void *ctx, const dhp_mouse_report_t *r);
     void (*focus_changed)(void *ctx, dhp_addr_t focus, bool is_self);
     void (*level_changed)(void *ctx, dhp_level_t level);
+
+    /* A level 3 bulk frame addressed to this board. The router does not
+     * interpret it: it belongs to dhp_data, which only the endpoints run.
+     * A board with no client attached simply leaves this NULL and the frame
+     * is dropped, which is the correct behaviour -- there is nobody to
+     * reassemble it. */
+    void (*deliver_data)(void *ctx, const dhp_frame_t *f);
     void  *ctx;
 } dhp_router_hooks_t;
 

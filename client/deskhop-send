@@ -1,0 +1,44 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Talk to a running deskhop-client.
+#
+#   deskhop-send status
+#   deskhop-send peer 2
+#   deskhop-send text "hello"
+#   deskhop-send file ~/notes.txt
+#   deskhop-send share smb://deskhop/share/holiday.mp4
+set -eu
+
+SOCK="${DESKHOP_CLIENT_SOCK:-$HOME/.deskhop-client.sock}"
+
+if [ $# -eq 0 ]; then
+    echo "usage: deskhop-send status|peer <addr>|text <s>|file <path>|share <url>" >&2
+    exit 2
+fi
+
+if [ ! -S "$SOCK" ]; then
+    echo "deskhop-send: no client at $SOCK" >&2
+    exit 1
+fi
+
+cmd="$1"; shift
+
+# `file` is spelled `send` on the wire; the CLI name reads better.
+[ "$cmd" = "file" ] && cmd="send"
+
+# Paths are resolved here rather than in the daemon, which may have a different
+# working directory entirely when started from systemd.
+if [ "$cmd" = "send" ] && [ $# -gt 0 ]; then
+    set -- "$(readlink -f "$1")"
+fi
+
+if ! command -v socat >/dev/null 2>&1; then
+    echo "deskhop-send: needs socat (apt install socat)" >&2
+    exit 1
+fi
+
+REPLY="${TMPDIR:-/tmp}/deskhop-send.$$"
+trap 'rm -f "$REPLY"' EXIT
+
+printf '%s %s' "$cmd" "$*" | socat -t2 - "UNIX-SENDTO:$SOCK,bind=$REPLY"

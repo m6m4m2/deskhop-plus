@@ -589,6 +589,12 @@ void dhp_router_rx(dhp_router_t *r, const dhp_frame_t *f, dhp_port_t in_port,
         break;
     }
 
+    case DHP_MSG_DATA:
+        if (r->hooks.deliver_data) {
+            r->hooks.deliver_data(r->hooks.ctx, f);
+        }
+        break;
+
     case DHP_MSG_INPUT: {
         /* Raw input captured elsewhere and handed to us because we hold the
          * active role. Only accept it from a board that actually has input

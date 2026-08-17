@@ -56,6 +56,20 @@ jobs:
           cmake --build build-coord -j"$(nproc)"
           ctest --test-dir build-coord --output-on-failure
 
+  client:
+    name: level 3 client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Starts two real client processes and relays between them, so this
+      # covers the daemon rather than only the transport.
+      - name: Build and test
+        run: |
+          cmake -B build-client -S client
+          cmake --build build-client -j"$(nproc)"
+          ctest --test-dir build-client --output-on-failure
+
   firmware:
     name: rp2040 firmware
     runs-on: ubuntu-latest

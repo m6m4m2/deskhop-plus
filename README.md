@@ -61,6 +61,7 @@ These are measured, not asserted. From the test suite:
 | **[Link framing](docs/protocols/link-framing.md)** | HDLC-style, with a checksum and a hop limit. Chosen because it resynchronises with no state, so a board plugged into a running chain finds its place immediately. |
 | **[Authentication](docs/protocols/auth.md)** | Every frame is tagged, so a board attached by someone else cannot claim the coordinator role. Boards trust each other only after a deliberate physical action on both, and if a third device joins that exchange, everyone aborts rather than trusting anyone. |
 | **[Pointer](docs/protocols/pointer.md)** | Relative dead-reckoning, where crossing is "keep pushing at the edge". That's why it needs no layout configuration. |
+| **[Data](docs/protocols/data.md)** | Level 3 segmentation and reassembly, go-back-N so a receiver can stream to disk without a reordering buffer. Anything large moves over the share instead, because a keyboard cable is the wrong place for a gigabyte. |
 
 ## Build and test
 
@@ -85,7 +86,7 @@ failover timing and the level transitions testable at all.
 core/          Freestanding C11. No allocation, no I/O, no clock access.
 firmware/      RP2040: USB, UART, PIO, buttons, LED. Glue only.
 coordinator/   Pi Zero 2 W: display, configuration. Runs the same core/.
-client/        Level 3, per machine.
+client/        Level 3, per machine. Also runs the same core/.
 tests/         Host-run. Real protocol code, simulated wires and clock.
 docs/          Architecture and the four protocol specifications.
 ```
@@ -99,7 +100,8 @@ from its neighbours, with a Pi Zero 2 W as the optional coordinator.
 
 **[docs/hardware.md](docs/hardware.md)** has the pin assignment, the isolator
 wiring, and a bring-up order that lets you test one thing at a time.
-**[docs/coordinator.md](docs/coordinator.md)** covers the level 2 daemon.
+**[docs/coordinator.md](docs/coordinator.md)** covers the level 2 daemon and
+**[docs/client.md](docs/client.md)** the level 3 client.
 
 The final product is a modular chain you extend by adding boards, all running
 one firmware image with one identity — deliberately identifiable and
@@ -121,8 +123,10 @@ election instead of fixed roles, and the authenticated link.
 The protocol core, the election, the pointer, the link layer and pairing are
 implemented and tested. The coordinator daemon is implemented and tested by
 being run — including end to end against the real binary over a pseudo-terminal.
-The RP2040 firmware compiles and produces a `.uf2` but has never been run on
-hardware. The level 3 clients do not exist yet.
+The level 3 client is implemented and tested end to end, two real client
+processes at a time. The RP2040 firmware compiles and produces a `.uf2` but has
+never been run on hardware, and does not yet expose the vendor HID interface
+the client needs to attach to.
 
 [docs/status.md](docs/status.md) is specific about which is which, and about
 the design's real limitations.
