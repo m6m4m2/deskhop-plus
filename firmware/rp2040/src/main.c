@@ -218,6 +218,7 @@ void hid_bridge_on_vendor_out(const uint8_t *data, uint16_t len)
  * Main loop
  * ------------------------------------------------------------------ */
 
+#ifndef DHP_BRINGUP
 static void core1_usb_host(void)
 {
     /* Must happen before anything else on this core: core 0 writes flash when
@@ -234,11 +235,30 @@ static void core1_usb_host(void)
         hid_bridge_host_poll();
     }
 }
+#endif
 
 int main(void)
 {
     board_init();
     crypto_backend_init();
+
+#ifdef DHP_BRINGUP
+    /* Bring-up build: the LED comes up first and PIO-USB is left out entirely.
+     *
+     * Both UARTs belong to the chain, so there is no console on this board and
+     * the LED is the only diagnostic. In the normal build it is initialised on
+     * core 1 *after* PIO-USB, because in host mode PIO-USB claims state
+     * machines in both PIO blocks and indication must not compete with USB for
+     * them. The consequence is that a PIO-USB failure would present as a dark
+     * LED and total silence, with no way to tell which of the two broke.
+     *
+     * So stage one tests one thing: does this board boot, clock correctly, and
+     * enumerate as a keyboard and mouse. If the LED lights here and goes dark
+     * in the full build, PIO-USB took the resources -- which is a diagnosis
+     * rather than a mystery. */
+    board_led_hw_init();
+    board_led(LED_UNPAIRED);
+#endif
 
     const dhp_addr_t addr = board_addr();
     const dhp_uid_t uid = board_uid();
@@ -284,7 +304,9 @@ int main(void)
      * core 1. Queues first, since core 0 begins draining them immediately. */
     tud_init(0);
     hid_bridge_queues_init();
+#ifndef DHP_BRINGUP
     multicore_launch_core1(core1_usb_host);
+#endif
 
     dhp_router_start(&g_router, board_now_ms());
 
@@ -326,7 +348,21 @@ int main(void)
         }
 
         if (board_switch_pressed()) {
+#ifdef DHP_BRINGUP
+            /* Nudge the pointer instead of switching machines. There is no
+             * chain to switch to in stage one, and a cursor that jumps when
+             * the button is pressed proves the whole device-side path at once:
+             * clock, USB enumeration, the HID descriptors, the report
+             * endpoint, the button and its debounce. Enumeration alone would
+             * only prove the descriptors. */
+            dhp_mouse_report_t nudge;
+            memset(&nudge, 0, sizeof(nudge));
+            nudge.dx = 30;
+            hid_bridge_send_mouse(&nudge);
+            board_led(LED_ACTIVE_FOCUSED);
+#else
             dhp_router_button(&g_router, now);
+#endif
         }
 
         if (board_pair_held() && g_pair.state != DHP_PAIR_WAITING) {
@@ -342,7 +378,9 @@ int main(void)
             last_caps = caps;
         }
 
+#ifndef DHP_BRINGUP
         clientlink_task(&g_client, now);
+#endif
 
         dhp_pair_tick(&g_pair, now);
         pairing_drain(now);

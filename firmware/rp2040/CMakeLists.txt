@@ -91,4 +91,36 @@ target_compile_definitions(deskhop_plus PRIVATE
 # rather than here: a compile-time SYS_CLK_KHZ obliges you to supply the PLL
 # VCO and post-dividers by hand, and setting it at runtime keeps the UART baud
 # divisor calculation correct because uart_init() then runs at the final clock.
+# A second image for bench bring-up: same sources, no PIO-USB host, LED up
+# first. See the DHP_BRINGUP block in main.c for why the two risky subsystems
+# are worth separating on a first power-on.
+add_executable(deskhop_bringup
+    src/main.c
+    src/board.c
+    src/hid_bridge.c
+    src/clientlink.c
+    src/crypto_backend.c
+    src/usb_descriptors.c
+    ${DHP_CORE_SRC}
+    ${PICO_SDK_PATH}/lib/tinyusb/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
+)
+target_include_directories(deskhop_bringup PRIVATE
+    ${DHP_ROOT}/core/include
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${PICO_SDK_PATH}/lib/tinyusb/src
+)
+target_compile_definitions(deskhop_bringup PRIVATE
+    PICO_DEFAULT_PIO_USB_DP_PIN=0
+    DHP_BRINGUP=1
+)
+target_link_libraries(deskhop_bringup PRIVATE
+    pico_stdlib pico_multicore pico_unique_id
+    hardware_pio hardware_dma hardware_flash hardware_uart hardware_clocks
+    tinyusb_device tinyusb_host pico_pio_usb monocypher
+)
+pico_generate_pio_header(deskhop_bringup ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+pico_enable_stdio_uart(deskhop_bringup 0)
+pico_enable_stdio_usb(deskhop_bringup 0)
+pico_add_extra_outputs(deskhop_bringup)
+
 pico_add_extra_outputs(deskhop_plus)
