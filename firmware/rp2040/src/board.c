@@ -100,7 +100,20 @@ static void port_isr(dhp_port_t p)
     uart_inst_t *u = port_uart(p);
 
     while (uart_is_readable(u)) {
-        ring_push(&g_rx[p], (uint8_t)uart_get_hw(u)->dr);
+        const uint32_t dr = uart_get_hw(u)->dr;
+
+        /* The PL011 puts the receive error flags in the top of the same
+         * register as the data: framing, parity, break and overrun. A byte
+         * that arrived with any of them set was not a byte -- it is whatever
+         * the shift register happened to hold when the line misbehaved, and
+         * feeding it to the framer just costs a resync. Dropping it here is
+         * free, and it matters most at the moment a neighbour powers up or
+         * down, when the line is legitimately garbage for a few bit times. */
+        if (dr & (UART_UARTDR_OE_BITS | UART_UARTDR_BE_BITS |
+                  UART_UARTDR_PE_BITS | UART_UARTDR_FE_BITS)) {
+            continue;
+        }
+        ring_push(&g_rx[p], (uint8_t)dr);
     }
     while (uart_is_writable(u)) {
         uint8_t b;
@@ -156,6 +169,15 @@ static void link_init(void)
      * send. */
     uart_set_irq_enables(uart0, true, false);
     uart_set_irq_enables(uart1, true, false);
+
+    /* An RP2040 pad comes out of reset with a pull-DOWN, so an unconnected
+     * receive pin sits low -- which on a UART is not idle, it is a break. The
+     * far side of an isolator is unpowered whenever the neighbouring board is
+     * off, which is a state this design expects rather than an error, so a
+     * port with no neighbour is the normal case and must be silent. Idle high
+     * is what makes it silent. */
+    gpio_pull_up(PIN_UART0_RX);
+    gpio_pull_up(PIN_UART1_RX);
 }
 
 /* ------------------------------------------------------------------ *
